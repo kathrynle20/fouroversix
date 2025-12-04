@@ -42,7 +42,7 @@ apply_ptq(
 
 ### Quantize a Tensor to NVFP4
 
-Check the `quantize_to_fp4` parameters
+Check the `quantize_to_fp4` [arguments](https://github.com/mit-han-lab/fouroversix/blob/f1b78701c753ea49c091ac39d85c5753b703f5ca/src/fouroversix/frontend.py#L72) for more details about how you can enable certain features during quantization, such as stochastic rounding or 2D block quantization.
 
 ```python
 import torch
@@ -63,14 +63,17 @@ x_e2m1, x_e4m3, x_normconst = quantize_to_fp4(
 ```python
 from fouroversix import fp4_matmul
 
-# After quantizing two tensors A and B as shown above:
+# Starting from two BF16 tensors with shape (M, K) and (N, K):
+out = fp4_matmul(a, b)
+
+# If you've already quantized two tensors A and B as shown above:
 out = fp4_matmul(
-    a_e2m1,
-    a_e4m3,
-    a_normconst,
-    b_e2m1,
-    b_e4m3,
-    b_normconst,
+    a_e2m1=a_e2m1,
+    a_sf=a_e4m3,
+    a_normconst=a_normconst,
+    b_e2m1=b_e2m1,
+    b_sf=b_e4m3,
+    b_normconst=b_normconst,
 )
 ```
 
