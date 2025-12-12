@@ -1,10 +1,73 @@
+import functools
 import os
+import subprocess
 import warnings
 from pathlib import Path
 from typing import Any
 
+from packaging.version import Version, parse
 from setuptools import setup
-from torch.utils.cpp_extension import BuildExtension, CUDAExtension
+from torch.utils.cpp_extension import CUDA_HOME, BuildExtension, CUDAExtension
+
+SKIP_CUDA_BUILD = os.getenv("SKIP_CUDA_BUILD", "0") == "1"
+
+
+@functools.cache
+def get_cuda_archs() -> list[str]:
+    return os.getenv("CUDA_ARCHS", "100;110;120").split(";")
+
+
+def get_cuda_bare_metal_version() -> Version:
+    raw_output = subprocess.check_output(  # noqa: S603
+        [CUDA_HOME + "/bin/nvcc", "-V"],
+        universal_newlines=True,
+    )
+    output = raw_output.split()
+    release_idx = output.index("release") + 1
+    return parse(output[release_idx].split(",")[0])
+
+
+def get_cuda_gencodes() -> list[str]:
+    """
+    Add -gencode flags based on nvcc capabilities.
+
+    Uses the following rules:
+      - sm_100/120 on CUDA >= 12.8
+      - Use 100f on CUDA >= 12.9 (Blackwell family-specific)
+      - Map requested 110 -> 101 if CUDA < 13.0 (Thor rename)
+      - Embed PTX for newest arch for forward compatibility
+    """
+
+    archs = set(get_cuda_archs())
+    cuda_version = get_cuda_bare_metal_version()
+    cc_flags = []
+
+    # Blackwell requires >= 12.8
+    if cuda_version >= Version("12.8"):
+        if "100" in archs:
+            # CUDA 12.9 introduced "family-specific" for Blackwell (100f)
+            if cuda_version >= Version("12.9"):
+                cc_flags += ["-gencode", "arch=compute_100f,code=sm_100"]
+            else:
+                cc_flags += ["-gencode", "arch=compute_100,code=sm_100"]
+
+        # Thor rename: 12.9 uses sm_101; 13.0+ uses sm_110
+        if "110" in archs:
+            if cuda_version >= Version("13.0"):
+                cc_flags += ["-gencode", "arch=compute_110f,code=sm_110"]
+            elif cuda_version >= Version("12.9"):
+                # Provide Thor support for CUDA 12.9 via sm_101
+                cc_flags += ["-gencode", "arch=compute_101f,code=sm_101"]
+            # else: no Thor support in older toolkits
+
+        if "120" in archs:
+            # sm_120 is supported in CUDA 12.8/12.9+ toolkits
+            if cuda_version >= Version("12.9"):
+                cc_flags += ["-gencode", "arch=compute_120f,code=sm_120"]
+            else:
+                cc_flags += ["-gencode", "arch=compute_120,code=sm_120"]
+
+    return cc_flags
 
 
 class NinjaBuildExtension(BuildExtension):
@@ -48,10 +111,10 @@ class NinjaBuildExtension(BuildExtension):
 if __name__ == "__main__":
     ext_modules = None
 
-    if os.getenv("DISABLE_KERNEL_COMPILATION", "0") == "1":
+    if SKIP_CUDA_BUILD:
         warnings.warn(
-            "DISABLE_KERNEL_COMPILATION is set to 1, installing fouroversix without "
-            "quantization and matmul kernels",
+            "SKIP_CUDA_BUILD is set to 1, installing fouroversix without quantization "
+            "and matmul kernels",
             stacklevel=1,
         )
     else:
@@ -71,8 +134,6 @@ if __name__ == "__main__":
                     "nvcc": [
                         "-O3",
                         "-std=c++17",
-                        "-gencode",
-                        "arch=compute_100a,code=sm_100a",
                         "--expt-relaxed-constexpr",
                         "--use_fast_math",
                         "-DNDEBUG",
@@ -82,6 +143,7 @@ if __name__ == "__main__":
                         "-ffast-math",
                         "-Xcompiler",
                         "-finline-functions",
+                        *get_cuda_gencodes(),
                     ],
                 },
                 include_dirs=[

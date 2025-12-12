@@ -7,6 +7,10 @@ import torch
 
 from .utils import AdaptiveBlockScalingRule, DataType, FP4Format, RoundStyle
 
+SM_100 = 10
+SM_110 = 11
+SM_120 = 12
+
 
 class MatmulBackend(str, Enum):
     """
@@ -35,10 +39,9 @@ class MatmulBackend(str, Enum):
         """Check if the backend supports the given parameters."""
 
         if self == MatmulBackend.cutlass:
-            return (
-                torch.cuda.is_available()
-                and torch.cuda.get_device_capability()[0] == 10  # noqa: PLR2004
-            )
+            return torch.cuda.is_available() and torch.cuda.get_device_capability()[
+                0
+            ] in [SM_100, SM_110, SM_120]
 
         return True
 
@@ -203,10 +206,9 @@ class QuantizeBackend(str, Enum):
             return False
 
         if self == QuantizeBackend.cuda:
-            if (
-                not torch.cuda.is_available()
-                or torch.cuda.get_device_capability()[0] != 10  # noqa: PLR2004
-            ):
+            if not torch.cuda.is_available() or torch.cuda.get_device_capability()[
+                0
+            ] not in [SM_100, SM_110, SM_120]:
                 return False
 
             try:
@@ -216,8 +218,8 @@ class QuantizeBackend(str, Enum):
 
             return (
                 had is None
-                and fp4_format == "nvfp4"
-                and round_style == "nearest"
+                and fp4_format == FP4Format.nvfp4
+                and round_style == RoundStyle.nearest
                 and not block_scale_2d
                 and not transpose
             )
@@ -228,10 +230,15 @@ class QuantizeBackend(str, Enum):
             )
 
         if self == QuantizeBackend.triton:
-            return (
-                torch.cuda.is_available()
-                and torch.cuda.get_device_capability()[0] == 10  # noqa: PLR2004
-            )
+            if not torch.cuda.is_available() or torch.cuda.get_device_capability()[
+                0
+            ] not in [SM_100, SM_110, SM_120]:
+                return False
+
+            if round_style == RoundStyle.stochastic:
+                return torch.cuda.get_device_capability()[0] == SM_100
+
+            return True
 
         msg = f"Invalid backend: {self}"
         raise ValueError(msg)

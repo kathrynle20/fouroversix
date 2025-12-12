@@ -6,15 +6,13 @@ build-backend = "setuptools.build_meta"
 name = "fouroversix"
 version = "0.1.0"
 dependencies = [
+    "ninja~=1.13.0",
+    "psutil~=7.1.3",
     "torch~=2.9.1",
 ]
 
 [project.optional-dependencies]
-fast-build = [
-    "ninja~=1.13.0",
-    "psutil~=7.1.3",
-]
-test = [
+tests = [
     "lm_eval~=0.4.9.1,<0.4.9.2",
     "modal~=1.2.4",
     "pytest~=9.0.2",
