@@ -189,7 +189,7 @@ class QuantizeBackend(str, Enum):
         msg = f"No backend found for the given parameters: {kwargs}"
         raise ValueError(msg)
 
-    def is_supported(
+    def is_supported(  # noqa: PLR0911
         self,
         x: torch.Tensor,
         *,
