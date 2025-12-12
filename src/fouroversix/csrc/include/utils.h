@@ -339,7 +339,7 @@ namespace fouroversix
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    template <bool Is_4o6, bool Is_rtn, BlockScaleSelectionRuleType kBlockScaleSelectionRuleType>
+    template <bool Is_4o6, bool Is_rtn, AdaptiveBlockScalingRuleType kAdaptiveBlockScalingRuleType>
     struct Fp4ArrayQuant
     {
         using InputType = cutlass::Array<float, 8>;
@@ -401,7 +401,7 @@ namespace fouroversix
                     float val6 = __half2float(__ushort_as_half(out_dequant_4_lo));
                     float val7 = __half2float(__ushort_as_half(out_dequant_4_hi));
 
-                    if constexpr (kBlockScaleSelectionRuleType == BlockScaleSelectionRuleType::L1_NORM_4o6)
+                    if constexpr (kAdaptiveBlockScalingRuleType == AdaptiveBlockScalingRuleType::L1_NORM_4o6)
                     {
                         *err += std::abs((val0 - x[0]) * sf[0]);
                         *err += std::abs((val1 - x[1]) * sf[0]);
@@ -412,7 +412,7 @@ namespace fouroversix
                         *err += std::abs((val6 - x[6]) * sf[0]);
                         *err += std::abs((val7 - x[7]) * sf[0]);
                     }
-                    else if constexpr (kBlockScaleSelectionRuleType == BlockScaleSelectionRuleType::MSE_4o6)
+                    else if constexpr (kAdaptiveBlockScalingRuleType == AdaptiveBlockScalingRuleType::MSE_4o6)
                     {
                         *err += (val0 - x[0]) * (val0 - x[0]) * sf[0] * sf[0];
                         *err += (val1 - x[1]) * (val1 - x[1]) * sf[0] * sf[0];
@@ -423,7 +423,7 @@ namespace fouroversix
                         *err += (val6 - x[6]) * (val6 - x[6]) * sf[0] * sf[0];
                         *err += (val7 - x[7]) * (val7 - x[7]) * sf[0] * sf[0];
                     }
-                    else if constexpr (kBlockScaleSelectionRuleType == BlockScaleSelectionRuleType::ABS_MAX_4o6)
+                    else if constexpr (kAdaptiveBlockScalingRuleType == AdaptiveBlockScalingRuleType::ABS_MAX_4o6)
                     {
                         float val0_err = std::abs((val0 - x[0]) * sf[0]);
                         if (val0_err > *err)
@@ -452,7 +452,7 @@ namespace fouroversix
                     }
                     else
                     {
-                        printf("in Fp4ArrayQuant::convert, kBlockScaleSelectionRuleType = %d, not supported\n", kBlockScaleSelectionRuleType);
+                        printf("in Fp4ArrayQuant::convert, kAdaptiveBlockScalingRuleType = %d, not supported\n", kAdaptiveBlockScalingRuleType);
                         assert(false);
                     }
 
@@ -481,7 +481,7 @@ namespace fouroversix
         }
     };
 
-    template <bool Is_nvfp4, bool Is_4o6, bool Is_rtn, BlockScaleSelectionRuleType kBlockScaleSelectionRuleType, typename Engine, typename Layout, typename Element, typename OutputType>
+    template <bool Is_nvfp4, bool Is_4o6, bool Is_rtn, AdaptiveBlockScalingRuleType kAdaptiveBlockScalingRuleType, typename Engine, typename Layout, typename Element, typename OutputType>
     __forceinline__ __device__ float fp4_convertion(Tensor<Engine, Layout> const &tensor, const Element ts, float *sf_, OutputType *res)
     {
         constexpr int numel = decltype(size(tensor))::value;
@@ -493,7 +493,7 @@ namespace fouroversix
 
         using InputType = cutlass::Array<float, loop_size>;
 
-        Fp4ArrayQuant<Is_4o6, Is_rtn, kBlockScaleSelectionRuleType> fp4_array_quant;
+        Fp4ArrayQuant<Is_4o6, Is_rtn, kAdaptiveBlockScalingRuleType> fp4_array_quant;
 
         if constexpr (Is_4o6)
         {

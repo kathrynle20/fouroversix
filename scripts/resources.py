@@ -25,7 +25,6 @@ class Dependency(str, Enum):
     fast_hadamard_transform = "fast_hadamard_transform"
     flash_attention = "flash_attention"
     fouroversix = "fouroversix"
-    lm_eval = "lm_eval"
 
 
 cuda_version_to_image_tag = {
@@ -139,14 +138,6 @@ def get_image(  # noqa: C901
                 img = img.env({"DISABLE_KERNEL_COMPILATION": "1"})
 
             img = img.run_function(install_fouroversix, cpu=8, memory=32 * 1024)
-
-        if dependency == Dependency.lm_eval:
-            img = img.run_commands(
-                "git clone --depth 1 "
-                "https://github.com/EleutherAI/lm-evaluation-harness "
-                f"{FOUROVERSIX_INSTALL_PATH}/lm-evaluation-harness",
-                f"pip install {FOUROVERSIX_INSTALL_PATH}/lm-evaluation-harness",
-            )
 
     if extra_pip_dependencies is not None:
         img = img.uv_pip_install(*extra_pip_dependencies)

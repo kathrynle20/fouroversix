@@ -8,7 +8,7 @@
 namespace fouroversix
 {
 
-    enum BlockScaleSelectionRuleType
+    enum AdaptiveBlockScalingRuleType
     {
         ALL_6 = 0,
         ALL_4 = 1,

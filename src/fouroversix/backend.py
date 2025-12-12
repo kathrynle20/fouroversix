@@ -5,7 +5,7 @@ from typing import Any
 
 import torch
 
-from .utils import BlockScaleSelectionRule, DataType, FP4Format, RoundStyle
+from .utils import AdaptiveBlockScalingRule, DataType, FP4Format, RoundStyle
 
 
 class MatmulBackend(str, Enum):
@@ -190,9 +190,7 @@ class QuantizeBackend(str, Enum):
         self,
         x: torch.Tensor,
         *,
-        block_scale_selection_rule: BlockScaleSelectionRule = (
-            BlockScaleSelectionRule.always_6
-        ),
+        scale_rule: AdaptiveBlockScalingRule = (AdaptiveBlockScalingRule.always_6),
         block_scale_2d: bool = False,
         had: torch.Tensor | None = None,
         fp4_format: FP4Format = FP4Format.nvfp4,
@@ -225,9 +223,9 @@ class QuantizeBackend(str, Enum):
             )
 
         if self == QuantizeBackend.pytorch:
-            return (
-                block_scale_selection_rule == BlockScaleSelectionRule.always_6
-            ) and (x.shape[1] % 16 == 0)
+            return (scale_rule == AdaptiveBlockScalingRule.always_6) and (
+                x.shape[1] % 16 == 0
+            )
 
         if self == QuantizeBackend.triton:
             return (
@@ -242,9 +240,7 @@ class QuantizeBackend(str, Enum):
         self,
         x: torch.Tensor,
         *,
-        block_scale_selection_rule: BlockScaleSelectionRule = (
-            BlockScaleSelectionRule.always_6
-        ),
+        scale_rule: AdaptiveBlockScalingRule = (AdaptiveBlockScalingRule.always_6),
         block_scale_2d: bool = False,
         had: torch.Tensor | None = None,
         fp4_format: FP4Format = FP4Format.nvfp4,
@@ -263,7 +259,7 @@ class QuantizeBackend(str, Enum):
                 round_style == RoundStyle.nearest,
                 had is not None,
                 transpose,
-                block_scale_selection_rule.cuda_id(),
+                scale_rule.cuda_id(),
                 **kwargs,
             )
 
@@ -275,7 +271,7 @@ class QuantizeBackend(str, Enum):
                 had=had,
                 fp4_format=fp4_format,
                 round_style=round_style,
-                block_scale_selection_rule=block_scale_selection_rule,
+                scale_rule=scale_rule,
                 block_scale_2d=block_scale_2d,
                 transpose=transpose,
                 **kwargs,
@@ -289,7 +285,7 @@ class QuantizeBackend(str, Enum):
                 had=had,
                 fp4_format=fp4_format,
                 round_style=round_style,
-                block_scale_selection_rule=block_scale_selection_rule,
+                scale_rule=scale_rule,
                 block_scale_2d=block_scale_2d,
                 transpose=transpose,
                 **kwargs,
@@ -303,9 +299,7 @@ def quantize_to_fp4(
     x: torch.Tensor,
     *,
     backend: QuantizeBackend | None = None,
-    block_scale_selection_rule: BlockScaleSelectionRule = (
-        BlockScaleSelectionRule.always_6
-    ),
+    scale_rule: AdaptiveBlockScalingRule = (AdaptiveBlockScalingRule.always_6),
     block_scale_2d: bool = False,
     had: torch.Tensor | None = None,
     fp4_format: FP4Format = FP4Format.nvfp4,
@@ -319,9 +313,9 @@ def quantize_to_fp4(
         x (torch.Tensor): The input tensor to quantize.
         backend (QuantizeBackend | None): The backend to use. If None, the fastest
             backend that supports the given parameters will be selected automatically.
-        block_scale_selection_rule (BlockScaleSelectionRule): The block scale selection
-            rule to use, e.g. `BlockScaleSelectionRule.always_6` for normal NVFP4
-            quantization, or `BlockScaleSelectionRule.mse` for 4/6 with MSE selection.
+        scale_rule (AdaptiveBlockScalingRule): The block scale selection
+            rule to use, e.g. `AdaptiveBlockScalingRule.always_6` for normal NVFP4
+            quantization, or `AdaptiveBlockScalingRule.mse` for 4/6 with MSE selection.
         block_scale_2d (bool): Whether to use 2D block scaling.
         had (torch.Tensor | None): The Hadamard matrix to use.
         fp4_format (FP4Format): The FP4 format to use, either `FP4Format.nvfp4` or
@@ -337,7 +331,7 @@ def quantize_to_fp4(
     """
 
     kwargs = {
-        "block_scale_selection_rule": block_scale_selection_rule,
+        "scale_rule": scale_rule,
         "block_scale_2d": block_scale_2d,
         "had": had,
         "fp4_format": fp4_format,

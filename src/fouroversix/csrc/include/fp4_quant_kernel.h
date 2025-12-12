@@ -37,8 +37,8 @@ namespace fouroversix
         extern __shared__ char smem[];
 
         // Constants
-        constexpr BlockScaleSelectionRuleType kBlockScaleSelectionRuleType = static_cast<BlockScaleSelectionRuleType>(kSelectionRule);
-        constexpr bool Is_4o6 = kBlockScaleSelectionRuleType == BlockScaleSelectionRuleType::L1_NORM_4o6 || kBlockScaleSelectionRuleType == BlockScaleSelectionRuleType::MSE_4o6 || kBlockScaleSelectionRuleType == BlockScaleSelectionRuleType::ABS_MAX_4o6;
+        constexpr AdaptiveBlockScalingRuleType kAdaptiveBlockScalingRuleType = static_cast<AdaptiveBlockScalingRuleType>(kSelectionRule);
+        constexpr bool Is_4o6 = kAdaptiveBlockScalingRuleType == AdaptiveBlockScalingRuleType::L1_NORM_4o6 || kAdaptiveBlockScalingRuleType == AdaptiveBlockScalingRuleType::MSE_4o6 || kAdaptiveBlockScalingRuleType == AdaptiveBlockScalingRuleType::ABS_MAX_4o6;
         constexpr int kBlockM = Kernel_traits::kBlockM;
         constexpr int kBlockN = Kernel_traits::kBlockN;
         constexpr int kNWarps = Kernel_traits::kNWarps;
@@ -213,8 +213,8 @@ namespace fouroversix
         extern __shared__ char smem[];
 
         // Constants
-        constexpr BlockScaleSelectionRuleType kBlockScaleSelectionRuleType = static_cast<BlockScaleSelectionRuleType>(kSelectionRule);
-        constexpr bool Is_4o6 = kBlockScaleSelectionRuleType == BlockScaleSelectionRuleType::L1_NORM_4o6 || kBlockScaleSelectionRuleType == BlockScaleSelectionRuleType::MSE_4o6 || kBlockScaleSelectionRuleType == BlockScaleSelectionRuleType::ABS_MAX_4o6;
+        constexpr AdaptiveBlockScalingRuleType kAdaptiveBlockScalingRuleType = static_cast<AdaptiveBlockScalingRuleType>(kSelectionRule);
+        constexpr bool Is_4o6 = kAdaptiveBlockScalingRuleType == AdaptiveBlockScalingRuleType::L1_NORM_4o6 || kAdaptiveBlockScalingRuleType == AdaptiveBlockScalingRuleType::MSE_4o6 || kAdaptiveBlockScalingRuleType == AdaptiveBlockScalingRuleType::ABS_MAX_4o6;
         constexpr int kBlockM = Kernel_traits::kBlockM;
         constexpr int kBlockN = Kernel_traits::kBlockN;
         constexpr int kBlockMSF = Kernel_traits::kBlockMSF;
@@ -361,22 +361,22 @@ namespace fouroversix
                 sf_[0] = static_cast<float>(static_cast<ElementScaleFactor>(sf_[0]));
                 sf_[1] = static_cast<float>(static_cast<ElementScaleFactor>(sf_[1]));
 
-                sf = fp4_convertion<Is_nvfp4, true, Is_rtn, kBlockScaleSelectionRuleType>(sGX, ts, sf_, res);
+                sf = fp4_convertion<Is_nvfp4, true, Is_rtn, kAdaptiveBlockScalingRuleType>(sGX, ts, sf_, res);
                 // if (cute::thread0()) {
                 //     printf("in fp4_quant_block, 4o6, sf = %f, res[0] = %lx\n", sf, reinterpret_cast<uint64_t&>(res[0]));
                 // }
             }
             else
             {
-                // static_assert(kBlockScaleSelectionRuleType == BlockScaleSelectionRuleType::ALL_6 || kBlockScaleSelectionRuleType == BlockScaleSelectionRuleType::ALL_4, "kBlockScaleSelectionRuleType must be BlockScaleSelectionRuleType::ALL_6 or BlockScaleSelectionRuleType::ALL_4");
+                // static_assert(kAdaptiveBlockScalingRuleType == AdaptiveBlockScalingRuleType::ALL_6 || kAdaptiveBlockScalingRuleType == AdaptiveBlockScalingRuleType::ALL_4, "kAdaptiveBlockScalingRuleType must be AdaptiveBlockScalingRuleType::ALL_6 or AdaptiveBlockScalingRuleType::ALL_4");
                 float sf_val = 0.0f;
-                if constexpr (kBlockScaleSelectionRuleType == BlockScaleSelectionRuleType::ALL_6)
+                if constexpr (kAdaptiveBlockScalingRuleType == AdaptiveBlockScalingRuleType::ALL_6)
                 {
                     sf_val = clamp(
                         static_cast<float>(group_max / sf_scale_6),
                         E4M3_MIN_POSITIVE_VALUE, E4M3_MAX_VALUE);
                 }
-                else if constexpr (kBlockScaleSelectionRuleType == BlockScaleSelectionRuleType::ALL_4)
+                else if constexpr (kAdaptiveBlockScalingRuleType == AdaptiveBlockScalingRuleType::ALL_4)
                 {
                     sf_val = clamp(
                         static_cast<float>(group_max / sf_scale_4),
@@ -384,14 +384,14 @@ namespace fouroversix
                 }
                 else
                 {
-                    printf("in fp4_quant_block, kBlockScaleSelectionRuleType = %d, not supported\n", kBlockScaleSelectionRuleType);
+                    printf("in fp4_quant_block, kAdaptiveBlockScalingRuleType = %d, not supported\n", kAdaptiveBlockScalingRuleType);
                     assert(false);
                 }
 
                 // Add by JXGuo: convert the float to ElementScaleFactor and convert back for better accuracy.
                 sf_val = static_cast<float>(static_cast<ElementScaleFactor>(sf_val));
 
-                sf = fp4_convertion<Is_nvfp4, false, Is_rtn, kBlockScaleSelectionRuleType>(sGX, ts, &sf_val, res);
+                sf = fp4_convertion<Is_nvfp4, false, Is_rtn, kAdaptiveBlockScalingRuleType>(sGX, ts, &sf_val, res);
                 // if (cute::thread0()) {
                 //     printf("in fp4_quant_block, not 4o6, sf = %f, res[0] = %lx\n", sf, reinterpret_cast<uint64_t&>(res[0]));
                 // }

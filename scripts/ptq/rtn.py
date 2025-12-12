@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING, Any
 
 from ..resources import (
     FOUROVERSIX_CACHE_PATH,
-    Dependency,
     app,
     cache_volume,
     get_image,
@@ -17,12 +16,7 @@ if TYPE_CHECKING:
     from transformers import AutoModelForCausalLM
 
 
-rtn_img = get_image(
-    dependencies=[
-        Dependency.lm_eval,
-        Dependency.fouroversix,
-    ],
-)
+rtn_img = get_image()
 
 with rtn_img.imports():
     from fouroversix import apply_ptq

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from .backend import MatmulBackend, QuantizeBackend
-from .utils import BlockScaleSelectionRule, DataType, FP4Format, RoundStyle
+from .utils import AdaptiveBlockScalingRule, DataType, FP4Format, RoundStyle
 
 if TYPE_CHECKING:
     import torch
@@ -73,9 +73,7 @@ def quantize_to_fp4(
     x: torch.Tensor,
     *,
     backend: QuantizeBackend | None = None,
-    block_scale_selection_rule: BlockScaleSelectionRule = (
-        BlockScaleSelectionRule.always_6
-    ),
+    scale_rule: AdaptiveBlockScalingRule = (AdaptiveBlockScalingRule.always_6),
     block_scale_2d: bool = False,
     had: torch.Tensor | None = None,
     fp4_format: FP4Format = FP4Format.nvfp4,
@@ -83,7 +81,7 @@ def quantize_to_fp4(
     transpose: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
     kwargs = {
-        "block_scale_selection_rule": block_scale_selection_rule,
+        "scale_rule": scale_rule,
         "block_scale_2d": block_scale_2d,
         "had": had,
         "fp4_format": fp4_format,

@@ -9,6 +9,7 @@ class PTQMethod(str, Enum):
 
     high_precision = "high_precision"
     rtn = "rtn"
+    smoothquant = "smoothquant"
 
 
 def get_model_size(model_name: str | None) -> float:

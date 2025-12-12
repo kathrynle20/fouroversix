@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Literal
 
 import torch
-from fouroversix.utils import BlockScaleSelectionRule
+from fouroversix.utils import AdaptiveBlockScalingRule
 
 if TYPE_CHECKING:
     from fouroversix.utils import FP4Format, RoundStyle
@@ -283,8 +283,8 @@ def quantize_to_fp4(
     norm_constant: torch.Tensor | None = None,
     had: torch.Tensor | None = None,
     *,
-    block_scale_selection_rule: BlockScaleSelectionRule = (  # noqa: ARG001
-        BlockScaleSelectionRule.always_6
+    scale_rule: AdaptiveBlockScalingRule = (  # noqa: ARG001
+        AdaptiveBlockScalingRule.always_6
     ),
     block_scale_2d: bool = False,  # noqa: ARG001
     enable_four_over_six: bool = False,

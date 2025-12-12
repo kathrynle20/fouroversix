@@ -3,7 +3,7 @@ from enum import Enum
 import torch
 
 
-class BlockScaleSelectionRule(str, Enum):
+class AdaptiveBlockScalingRule(str, Enum):
     """
     Block scale selection rules for NVFP4 quantization.
 
@@ -27,11 +27,11 @@ class BlockScaleSelectionRule(str, Enum):
         """ID for the rule in the CUDA implementation."""
 
         return {
-            BlockScaleSelectionRule.abs_max: 4,
-            BlockScaleSelectionRule.always_4: 1,
-            BlockScaleSelectionRule.always_6: 0,
-            BlockScaleSelectionRule.l1_norm: 2,
-            BlockScaleSelectionRule.mse: 3,
+            AdaptiveBlockScalingRule.abs_max: 4,
+            AdaptiveBlockScalingRule.always_4: 1,
+            AdaptiveBlockScalingRule.always_6: 0,
+            AdaptiveBlockScalingRule.l1_norm: 2,
+            AdaptiveBlockScalingRule.mse: 3,
         }[self]
 
 

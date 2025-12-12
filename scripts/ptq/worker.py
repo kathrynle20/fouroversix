@@ -9,6 +9,11 @@ from dateutil.tz import tzlocal
 
 from .high_precision import HighPrecisionEvaluator
 from .rtn import RTNEvaluator
+from .smoothquant import (
+    SmoothQuantAutoAlphaEvaluator,
+    SmoothQuantEvaluator,
+    get_smoothquant_alpha,
+)
 from .utils import PTQMethod
 
 if TYPE_CHECKING:
@@ -17,13 +22,27 @@ if TYPE_CHECKING:
     from .evaluator import PTQEvaluator
 
 
-def get_evaluator(ptq_method: PTQMethod) -> type[PTQEvaluator]:
+def get_evaluator(
+    ptq_method: PTQMethod,
+    **kwargs: dict[str, Any],
+) -> tuple[type[PTQEvaluator], dict[str, Any]]:
     """Get the evaluator class for the given PTQ method."""
 
     if ptq_method == PTQMethod.high_precision:
-        return HighPrecisionEvaluator
+        return HighPrecisionEvaluator, {}
     if ptq_method == PTQMethod.rtn:
-        return RTNEvaluator
+        return RTNEvaluator, {}
+    if ptq_method == PTQMethod.smoothquant:
+        smoothquant_alpha = get_smoothquant_alpha(
+            kwargs["model_name"],
+            kwargs["a_scale_rule"],
+            kwargs["w_scale_rule"],
+        )
+
+        if smoothquant_alpha is None:
+            return SmoothQuantAutoAlphaEvaluator, {}
+
+        return SmoothQuantEvaluator, {"smoothquant_alpha": smoothquant_alpha}
 
     msg = f"Unsupported PTQ method: {ptq_method}"
     raise ValueError(msg)
@@ -38,12 +57,17 @@ def worker(gpu_id: str, task_queue: multiprocessing.Queue) -> dict[str, Any]:
 
         model_name, ptq_method, kwargs = task
 
-        evaluator_cls = get_evaluator(ptq_method)
+        evaluator_cls, evaluator_kwargs = get_evaluator(
+            ptq_method,
+            model_name=model_name,
+            **kwargs,
+        )
         results = evaluator_cls().evaluate.local(
             model_name=model_name,
             ptq_method=ptq_method,
             **{
                 **kwargs,
+                **evaluator_kwargs,
                 "device": f"cuda:{gpu_id}",
             },
         )

@@ -8,7 +8,7 @@ import torch
 import triton
 import triton.language as tl
 from fouroversix.quantize.reference import get_nvfp4_tensor_scale
-from fouroversix.utils import BlockScaleSelectionRule
+from fouroversix.utils import AdaptiveBlockScalingRule
 from triton.tools.tensor_descriptor import TensorDescriptor
 
 if TYPE_CHECKING:
@@ -20,11 +20,11 @@ E4M3_MAX_VALUE = tl.constexpr(448)
 FOUROVERSIX_AUTOTUNE = os.getenv("FOUROVERSIX_AUTOTUNE", "0") == "1"
 SCALE_MEGABLOCK_SIZE = tl.constexpr(512)
 
-SCALE_RULE_ABS_MAX = tl.constexpr(BlockScaleSelectionRule.abs_max.value)
-SCALE_RULE_ALWAYS_4 = tl.constexpr(BlockScaleSelectionRule.always_4.value)
-SCALE_RULE_ALWAYS_6 = tl.constexpr(BlockScaleSelectionRule.always_6.value)
-SCALE_RULE_L1_NORM = tl.constexpr(BlockScaleSelectionRule.l1_norm.value)
-SCALE_RULE_MSE = tl.constexpr(BlockScaleSelectionRule.mse.value)
+SCALE_RULE_ABS_MAX = tl.constexpr(AdaptiveBlockScalingRule.abs_max.value)
+SCALE_RULE_ALWAYS_4 = tl.constexpr(AdaptiveBlockScalingRule.always_4.value)
+SCALE_RULE_ALWAYS_6 = tl.constexpr(AdaptiveBlockScalingRule.always_6.value)
+SCALE_RULE_L1_NORM = tl.constexpr(AdaptiveBlockScalingRule.l1_norm.value)
+SCALE_RULE_MSE = tl.constexpr(AdaptiveBlockScalingRule.mse.value)
 
 
 @triton.jit
@@ -35,7 +35,7 @@ def fp32_to_scaled_fp4_kernel_four_over_six(  # noqa: C901, PLR0912, PLR0915
     BLOCK_SIZE_N: tl.constexpr,
     ROUND_STYLE: tl.constexpr,
     BLOCK_SCALE_2D: tl.constexpr,
-    BLOCK_SCALE_SELECTION_RULE: tl.constexpr,
+    scale_rule: tl.constexpr,
 ) -> None:
     norm_constant = tl.load(norm_constant_ptr)
 
@@ -229,19 +229,19 @@ def fp32_to_scaled_fp4_kernel_four_over_six(  # noqa: C901, PLR0912, PLR0915
         tl.join(x_fp16_6_lo, x_fp16_6_hi).reshape(128, 4, 16).to(norm_constant.dtype)
     )
 
-    if BLOCK_SCALE_SELECTION_RULE == SCALE_RULE_ABS_MAX:
+    if scale_rule == SCALE_RULE_ABS_MAX:
         six_error = tl.max(
             tl.abs(x_hp_6 * x_scales_hp_6[:, :, None] - x_scale_blocks),
             axis=-1,
         )
-    elif BLOCK_SCALE_SELECTION_RULE == SCALE_RULE_ALWAYS_4:
+    elif scale_rule == SCALE_RULE_ALWAYS_4:
         six_error = tl.full(x_scales_hp_6.shape, 1, tl.float16)
-    elif BLOCK_SCALE_SELECTION_RULE == SCALE_RULE_L1_NORM:
+    elif scale_rule == SCALE_RULE_L1_NORM:
         six_error = tl.sum(
             tl.abs(x_hp_6 * x_scales_hp_6[:, :, None] - x_scale_blocks),
             axis=-1,
         )
-    elif BLOCK_SCALE_SELECTION_RULE == SCALE_RULE_MSE:
+    elif scale_rule == SCALE_RULE_MSE:
         six_error = tl.sum(
             (x_hp_6 * x_scales_hp_6[:, :, None] - x_scale_blocks)
             * (x_hp_6 * x_scales_hp_6[:, :, None] - x_scale_blocks),
@@ -254,19 +254,19 @@ def fp32_to_scaled_fp4_kernel_four_over_six(  # noqa: C901, PLR0912, PLR0915
         tl.join(x_fp16_4_lo, x_fp16_4_hi).reshape(128, 4, 16).to(norm_constant.dtype)
     )
 
-    if BLOCK_SCALE_SELECTION_RULE == SCALE_RULE_ABS_MAX:
+    if scale_rule == SCALE_RULE_ABS_MAX:
         four_error = tl.max(
             tl.abs(x_hp_4 * x_scales_hp_4[:, :, None] - x_scale_blocks),
             axis=-1,
         )
-    elif BLOCK_SCALE_SELECTION_RULE == SCALE_RULE_ALWAYS_4:
+    elif scale_rule == SCALE_RULE_ALWAYS_4:
         four_error = tl.full(x_scales_hp_4.shape, 0, tl.float16)
-    elif BLOCK_SCALE_SELECTION_RULE == SCALE_RULE_L1_NORM:
+    elif scale_rule == SCALE_RULE_L1_NORM:
         four_error = tl.sum(
             tl.abs(x_hp_4 * x_scales_hp_4[:, :, None] - x_scale_blocks),
             axis=-1,
         )
-    elif BLOCK_SCALE_SELECTION_RULE == SCALE_RULE_MSE:
+    elif scale_rule == SCALE_RULE_MSE:
         four_error = tl.sum(
             (x_hp_4 * x_scales_hp_4[:, :, None] - x_scale_blocks)
             * (x_hp_4 * x_scales_hp_4[:, :, None] - x_scale_blocks),
@@ -423,7 +423,7 @@ def fp4_quantization_kernel(
     FP4_FORMAT: tl.constexpr,
     ROUND_STYLE: tl.constexpr,
     BLOCK_SCALE_2D: tl.constexpr,
-    BLOCK_SCALE_SELECTION_RULE: tl.constexpr,
+    scale_rule: tl.constexpr,
 ) -> None:
     pid_m = tl.program_id(0).to(tl.int64)
     pid_n = tl.program_id(1).to(tl.int64)
@@ -465,7 +465,7 @@ def fp4_quantization_kernel(
 
         x_block = x_block.to(tl.float32)
 
-        if BLOCK_SCALE_SELECTION_RULE != SCALE_RULE_ALWAYS_6:
+        if scale_rule != SCALE_RULE_ALWAYS_6:
             x_e2m1, x_scales = fp32_to_scaled_fp4_kernel_four_over_six(
                 x_block,
                 norm_constant_ptr,
@@ -473,7 +473,7 @@ def fp4_quantization_kernel(
                 BLOCK_SIZE_N,
                 ROUND_STYLE,
                 BLOCK_SCALE_2D,
-                BLOCK_SCALE_SELECTION_RULE,
+                scale_rule,
             )
         else:
             x_e2m1, x_scales = fp32_to_scaled_fp4_kernel(
@@ -562,7 +562,7 @@ def fp4_quantization_with_rht_kernel(
     FP4_FORMAT: tl.constexpr,
     ROUND_STYLE: tl.constexpr,
     BLOCK_SCALE_2D: tl.constexpr,
-    BLOCK_SCALE_SELECTION_RULE: tl.constexpr,
+    scale_rule: tl.constexpr,
 ) -> None:
     HAD_BLOCK_SIZE: tl.constexpr = h_desc.block_shape[0]
 
@@ -593,7 +593,7 @@ def fp4_quantization_with_rht_kernel(
             h_block,
         ).reshape(BLOCK_SIZE_M, BLOCK_SIZE_N)
 
-        if BLOCK_SCALE_SELECTION_RULE != SCALE_RULE_ALWAYS_6:
+        if scale_rule != SCALE_RULE_ALWAYS_6:
             x_e2m1, x_scales = fp32_to_scaled_fp4_kernel_four_over_six(
                 x_block,
                 norm_constant_ptr,
@@ -601,7 +601,7 @@ def fp4_quantization_with_rht_kernel(
                 BLOCK_SIZE_N,
                 ROUND_STYLE,
                 BLOCK_SCALE_2D,
-                BLOCK_SCALE_SELECTION_RULE,
+                scale_rule,
             )
         else:
             x_e2m1, x_scales = fp32_to_scaled_fp4_kernel(
@@ -648,7 +648,7 @@ autotuned_fp4_quantization_with_rht_kernel = triton.autotune(
         "FP4_FORMAT",
         "ROUND_STYLE",
         "BLOCK_SCALE_2D",
-        "BLOCK_SCALE_SELECTION_RULE",
+        "scale_rule",
     ],
     prune_configs_by={
         "early_config_prune": lambda configs, args, **kwargs: (  # noqa: ARG005
@@ -675,9 +675,7 @@ def quantize_to_fp4(  # noqa: C901, PLR0912
     *,
     fp4_format: FP4Format = "nvfp4",
     round_style: RoundStyle = "nearest",
-    block_scale_selection_rule: BlockScaleSelectionRule = (
-        BlockScaleSelectionRule.always_6
-    ),
+    scale_rule: AdaptiveBlockScalingRule = (AdaptiveBlockScalingRule.always_6),
     block_scale_2d: bool = False,
     transpose: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
@@ -742,7 +740,7 @@ def quantize_to_fp4(  # noqa: C901, PLR0912
             FP4_FORMAT=fp4_format,
             ROUND_STYLE=round_style,
             BLOCK_SCALE_2D=block_scale_2d,
-            BLOCK_SCALE_SELECTION_RULE=block_scale_selection_rule.value,
+            scale_rule=scale_rule.value,
             num_warps=1,
             num_stages=3,
         )
@@ -811,7 +809,7 @@ def quantize_to_fp4(  # noqa: C901, PLR0912
             FP4_FORMAT=fp4_format,
             ROUND_STYLE=round_style,
             BLOCK_SCALE_2D=block_scale_2d,
-            BLOCK_SCALE_SELECTION_RULE=block_scale_selection_rule.value,
+            scale_rule=scale_rule.value,
             num_warps=4,
             num_stages=3 if fp4_format == "nvfp4" else 1,
         )

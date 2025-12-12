@@ -3,7 +3,7 @@ from typing import Any
 
 import click
 import modal
-from fouroversix.utils import BlockScaleSelectionRule, DataType, FP4Format
+from fouroversix.utils import AdaptiveBlockScalingRule, DataType, FP4Format
 
 from ..resources import app, get_image
 from .utils import PTQMethod, print_results
@@ -24,12 +24,16 @@ def run_ptq(
 
     for model_name in model_names:
         for ptq_method in ptq_methods:
-            evaluator_cls = get_evaluator(ptq_method)
+            evaluator_cls, evaluator_kwargs = get_evaluator(
+                ptq_method,
+                model_name=model_name,
+                **kwargs,
+            )
             function_calls.append(
                 evaluator_cls().evaluate.spawn(
                     model_name=model_name,
                     ptq_method=ptq_method,
-                    **kwargs,
+                    **{**kwargs, **evaluator_kwargs},
                 ),
             )
 
@@ -49,8 +53,8 @@ def run_ptq(
 @click.command()
 @click.option(
     "--a-scale-rule",
-    type=BlockScaleSelectionRule,
-    default=BlockScaleSelectionRule.always_6,
+    type=AdaptiveBlockScalingRule,
+    default=AdaptiveBlockScalingRule.always_6,
 )
 @click.option("--detach", is_flag=True)
 @click.option("--device", type=str, default="cuda")
@@ -60,11 +64,12 @@ def run_ptq(
 @click.option("--ptq-method", "-p", type=PTQMethod, multiple=True, required=True)
 @click.option("--modal", is_flag=True)
 @click.option("--model-name", "-m", type=str, multiple=True, required=True)
-@click.option("--task", "-t", type=str, multiple=True, default=["wikitext"])
+@click.option("--tasks", "-t", type=str, multiple=True, default=["wikitext"])
+@click.option("--trust-remote-code", is_flag=True)
 @click.option(
     "--w-scale-rule",
-    type=BlockScaleSelectionRule,
-    default=BlockScaleSelectionRule.always_6,
+    type=AdaptiveBlockScalingRule,
+    default=AdaptiveBlockScalingRule.always_6,
 )
 @click.option("--weight-scale-2d", is_flag=True)
 def cli(**kwargs: dict[str, Any]) -> None:  # noqa: C901, PLR0912
@@ -84,8 +89,8 @@ def cli(**kwargs: dict[str, Any]) -> None:  # noqa: C901, PLR0912
             "Qwen/Qwen3-32B",
         ]
 
-    if isinstance(kwargs.get("task"), tuple):
-        kwargs["task"] = list(kwargs.get("task"))
+    if isinstance(kwargs.get("tasks"), tuple):
+        kwargs["tasks"] = list(kwargs.get("tasks"))
 
     # Validate options
     for ptq_method in ptq_methods:

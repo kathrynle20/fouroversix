@@ -24,7 +24,7 @@ If you don't have a Blackwell GPU, you may use our reference implementation, whi
 ### Quantize a Model to NVFP4
 
 ```python
-from fouroversix import BlockScaleSelectionRule, apply_ptq
+from fouroversix import AdaptiveBlockScalingRule, apply_ptq
 from transformers import AutoModelForCausalLM
 
 # Standard NVFP4 round-to-nearest quantization
@@ -35,8 +35,8 @@ apply_ptq(model)
 model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.2-1B")
 apply_ptq(
     model,
-    a_scale_rule=BlockScaleSelectionRule.mse,
-    w_scale_rule=BlockScaleSelectionRule.mse,
+    a_scale_rule=AdaptiveBlockScalingRule.mse,
+    w_scale_rule=AdaptiveBlockScalingRule.mse,
 )
 ```
 
@@ -46,7 +46,7 @@ Check the `quantize_to_fp4` [arguments](https://github.com/mit-han-lab/fourovers
 
 ```python
 import torch
-from fouroversix import BlockScaleSelectionRule, quantize_to_fp4
+from fouroversix import AdaptiveBlockScalingRule, quantize_to_fp4
 
 x = torch.randn(1024, 1024, dtype=torch.bfloat16, device="cuda")
 x_e2m1, x_e4m3, x_normconst = quantize_to_fp4(x)
@@ -54,7 +54,7 @@ x_e2m1, x_e4m3, x_normconst = quantize_to_fp4(x)
 # With 4/6:
 x_e2m1, x_e4m3, x_normconst = quantize_to_fp4(
     x,
-    block_scale_selection_rule=BlockScaleSelectionRule.mse
+    scale_rule=AdaptiveBlockScalingRule.mse
 )
 ```
 

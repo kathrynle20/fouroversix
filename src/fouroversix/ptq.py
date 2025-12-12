@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn  # noqa: PLR0402
 
 from .frontend import fp4_matmul, quantize_to_fp4
-from .utils import BlockScaleSelectionRule, DataType, FP4Format
+from .utils import AdaptiveBlockScalingRule, DataType, FP4Format
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -18,9 +18,9 @@ def build_forward(
     device: str,
     dtype: DataType,
     fp4_format: FP4Format,
-    a_scale_rule: BlockScaleSelectionRule,
-    w_scale_rule: BlockScaleSelectionRule,
-    weight_scale_2d: bool,
+    a_scale_rule: AdaptiveBlockScalingRule,
+    w_scale_rule: AdaptiveBlockScalingRule,
+    w_scale_2d: bool,
     a_quantize_kwargs: dict[str, Any],
     w_quantize_kwargs: dict[str, Any],
     **kwargs: dict[str, Any],  # noqa: ARG001
@@ -32,8 +32,8 @@ def build_forward(
         if not hasattr(self, "weight_e2m1"):
             self.weight_e2m1, self.weight_sf, self.weight_normconst = quantize_to_fp4(
                 self.weight,
-                block_scale_selection_rule=w_scale_rule,
-                block_scale_2d=weight_scale_2d,
+                scale_rule=w_scale_rule,
+                block_scale_2d=w_scale_2d,
                 **w_quantize_kwargs,
             )
             del self.weight
@@ -62,7 +62,7 @@ def build_forward(
                 out_dtype=dtype,
                 out_shape=(input.shape[1], out_n),
                 a_quantize_kwargs={
-                    "block_scale_selection_rule": a_scale_rule,
+                    "scale_rule": a_scale_rule,
                     **a_quantize_kwargs,
                 },
             )
@@ -82,11 +82,12 @@ def apply_ptq(
     device: str = "cuda",
     dtype: DataType = DataType.bfloat16,
     fp4_format: FP4Format = FP4Format.nvfp4,
-    a_scale_rule: BlockScaleSelectionRule = BlockScaleSelectionRule.always_6,
-    w_scale_rule: BlockScaleSelectionRule = BlockScaleSelectionRule.always_6,
-    weight_scale_2d: bool = False,
+    a_scale_rule: AdaptiveBlockScalingRule = AdaptiveBlockScalingRule.always_6,
+    w_scale_rule: AdaptiveBlockScalingRule = AdaptiveBlockScalingRule.always_6,
+    w_scale_2d: bool = False,
     a_quantize_kwargs: dict[str, Any] | None = None,
     w_quantize_kwargs: dict[str, Any] | None = None,
+    build_forward_fn: Callable | None = None,
     **kwargs: dict[str, Any],
 ) -> None:
     if exclude_layers is None:
@@ -98,18 +99,21 @@ def apply_ptq(
     if w_quantize_kwargs is None:
         w_quantize_kwargs = {}
 
+    if build_forward_fn is None:
+        build_forward_fn = build_forward
+
     for name, module in model.named_modules():
         if name in exclude_layers or not isinstance(module, nn.Linear):
             continue
 
         module.forward = types.MethodType(
-            build_forward(
+            build_forward_fn(
                 device=device,
                 dtype=dtype,
                 fp4_format=fp4_format,
                 a_scale_rule=a_scale_rule,
                 w_scale_rule=w_scale_rule,
-                weight_scale_2d=weight_scale_2d,
+                w_scale_2d=w_scale_2d,
                 a_quantize_kwargs=a_quantize_kwargs,
                 w_quantize_kwargs=w_quantize_kwargs,
                 **kwargs,

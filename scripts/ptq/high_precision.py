@@ -1,10 +1,7 @@
 from typing import Any
 
-from fouroversix.utils import BlockScaleSelectionRule
-
 from ..resources import (
     FOUROVERSIX_CACHE_PATH,
-    Dependency,
     app,
     cache_volume,
     get_image,
@@ -12,9 +9,10 @@ from ..resources import (
 )
 from .evaluator import PTQEvaluator
 
-hp_img = get_image(dependencies=[Dependency.lm_eval])
+hp_img = get_image()
 
 with hp_img.imports():
+    from fouroversix.utils import AdaptiveBlockScalingRule
     from transformers import AutoModelForCausalLM
 
 
@@ -34,15 +32,15 @@ class HighPrecisionEvaluator(PTQEvaluator):
         *,
         device: str,
         dtype: str,
-        a_scale_rule: BlockScaleSelectionRule,
-        w_scale_rule: BlockScaleSelectionRule,
+        a_scale_rule: AdaptiveBlockScalingRule,
+        w_scale_rule: AdaptiveBlockScalingRule,
         **kwargs: dict[str, Any],  # noqa: ARG002
     ) -> "AutoModelForCausalLM":
         """Return a model without any quantization."""
 
         if (
-            a_scale_rule != BlockScaleSelectionRule.always_6
-            or w_scale_rule != BlockScaleSelectionRule.always_6
+            a_scale_rule != AdaptiveBlockScalingRule.always_6
+            or w_scale_rule != AdaptiveBlockScalingRule.always_6
         ):
             msg = (
                 "Setting a block scale selection rule is not supported when keeping "
