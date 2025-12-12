@@ -54,7 +54,7 @@ def run_ptq(
 @click.option(
     "--a-scale-rule",
     type=AdaptiveBlockScalingRule,
-    default=AdaptiveBlockScalingRule.always_6,
+    default=AdaptiveBlockScalingRule.mse,
 )
 @click.option("--detach", is_flag=True)
 @click.option("--device", type=str, default="cuda")
@@ -69,7 +69,7 @@ def run_ptq(
 @click.option(
     "--w-scale-rule",
     type=AdaptiveBlockScalingRule,
-    default=AdaptiveBlockScalingRule.always_6,
+    default=AdaptiveBlockScalingRule.mse,
 )
 @click.option("--weight-scale-2d", is_flag=True)
 def cli(**kwargs: dict[str, Any]) -> None:  # noqa: C901, PLR0912

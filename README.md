@@ -53,7 +53,7 @@ from fouroversix import AdaptiveBlockScalingRule, quantize_to_fp4
 x = torch.randn(1024, 1024, dtype=torch.bfloat16, device="cuda")
 x_e2m1, x_e4m3, x_normconst = quantize_to_fp4(x)
 
-# With standard NVFP4 round-to-nearest quantization:
+# Standard NVFP4 round-to-nearest quantization
 x_e2m1, x_e4m3, x_normconst = quantize_to_fp4(
     x,
     scale_rule=AdaptiveBlockScalingRule.always_6,

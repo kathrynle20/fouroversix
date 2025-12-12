@@ -206,7 +206,7 @@ class QuantizeBackend(str, Enum):
         self,
         x: torch.Tensor,
         *,
-        scale_rule: AdaptiveBlockScalingRule = AdaptiveBlockScalingRule.always_6,  # noqa: ARG002
+        scale_rule: AdaptiveBlockScalingRule = AdaptiveBlockScalingRule.mse,  # noqa: ARG002
         block_scale_2d: bool = False,
         had: torch.Tensor | None = None,
         fp4_format: FP4Format = FP4Format.nvfp4,
@@ -258,7 +258,7 @@ class QuantizeBackend(str, Enum):
         self,
         x: torch.Tensor,
         *,
-        scale_rule: AdaptiveBlockScalingRule = AdaptiveBlockScalingRule.always_6,
+        scale_rule: AdaptiveBlockScalingRule = AdaptiveBlockScalingRule.mse,
         block_scale_2d: bool = False,
         had: torch.Tensor | None = None,
         fp4_format: FP4Format = FP4Format.nvfp4,
@@ -331,7 +331,7 @@ def quantize_to_fp4(
     x: torch.Tensor,
     *,
     backend: QuantizeBackend | None = None,
-    scale_rule: AdaptiveBlockScalingRule = AdaptiveBlockScalingRule.always_6,
+    scale_rule: AdaptiveBlockScalingRule = AdaptiveBlockScalingRule.mse,
     block_scale_2d: bool = False,
     had: torch.Tensor | None = None,
     fp4_format: FP4Format = FP4Format.nvfp4,
