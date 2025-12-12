@@ -11,13 +11,15 @@ If you have any questions, please get in touch or submit an issue.
 
 ## Setup
 
+To speed up build times, set `CUDA_ARCHS=100` (or `120` for RTX 50 and 60 Series GPUs).
+
 ```bash
-git clone --depth 1 https://github.com/mit-han-lab/fouroversix.git
+git clone --recursive https://github.com/mit-han-lab/fouroversix.git
 cd fouroversix
-pip install --no-build-isolation -e ".[fast-build,test]"
+pip install --no-build-isolation -e ".[tests]"
 ```
 
-If you don't have a Blackwell GPU, you may use our reference implementation, which is slow but helpful for testing, by setting the environment variable `DISABLE_KERNEL_COMPILATION=1` before running `pip install`.
+If you don't have a Blackwell GPU, you may use our reference implementation, which is slow but helpful for testing, by setting `SKIP_CUDA_BUILD=1` before running `pip install`.
 
 ## API
 
