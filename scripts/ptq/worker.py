@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from dateutil.tz import tzlocal
 
+from .gptq import GPTQEvaluator
 from .high_precision import HighPrecisionEvaluator
 from .rtn import RTNEvaluator
 from .smoothquant import (
@@ -28,6 +29,8 @@ def get_evaluator(
 ) -> tuple[type[PTQEvaluator], dict[str, Any]]:
     """Get the evaluator class for the given PTQ method."""
 
+    if ptq_method == PTQMethod.gptq:
+        return GPTQEvaluator, {}
     if ptq_method == PTQMethod.high_precision:
         return HighPrecisionEvaluator, {}
     if ptq_method == PTQMethod.rtn:

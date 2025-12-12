@@ -675,7 +675,7 @@ def quantize_to_fp4(  # noqa: C901, PLR0912
     *,
     fp4_format: FP4Format = "nvfp4",
     round_style: RoundStyle = "nearest",
-    scale_rule: AdaptiveBlockScalingRule = (AdaptiveBlockScalingRule.always_6),
+    scale_rule: AdaptiveBlockScalingRule = AdaptiveBlockScalingRule.always_6,
     block_scale_2d: bool = False,
     transpose: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:

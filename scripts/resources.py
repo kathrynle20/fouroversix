@@ -25,6 +25,8 @@ class Dependency(str, Enum):
     fast_hadamard_transform = "fast_hadamard_transform"
     flash_attention = "flash_attention"
     fouroversix = "fouroversix"
+    fp_quant = "fp_quant"
+    qutlass = "qutlass"
 
 
 cuda_version_to_image_tag = {
@@ -55,12 +57,23 @@ def install_fouroversix() -> None:
     )
 
 
+def install_qutlass() -> None:
+    subprocess.run(  # noqa: S603
+        [  # noqa: S607
+            "pip",
+            "install",
+            "--no-build-isolation",
+            f"{FOUROVERSIX_INSTALL_PATH}/third_party/qutlass",
+        ],
+        check=False,
+    )
+
+
 def get_image(  # noqa: C901
     dependencies: list[Dependency] | None = None,
     *,
-    cuda_version: str = "12.8",
+    cuda_version: str = "12.9",
     deploy: bool = False,
-    disable_kernels: bool = False,
     extra_env: dict[str, str] | None = None,
     extra_pip_dependencies: list[str] | None = None,
     python_version: str = "3.12",
@@ -94,8 +107,11 @@ def get_image(  # noqa: C901
         if dependency == Dependency.fast_hadamard_transform:
             img = img.run_commands(
                 "git clone https://github.com/Dao-AILab/fast-hadamard-transform.git "
-                f"{FOUROVERSIX_INSTALL_PATH}/fast-hadamard-transform",
-                f"pip install {FOUROVERSIX_INSTALL_PATH}/fast-hadamard-transform",
+                f"{FOUROVERSIX_INSTALL_PATH}/third_party/fast-hadamard-transform",
+                (
+                    f"pip install {FOUROVERSIX_INSTALL_PATH}/third_party"
+                    "/fast-hadamard-transform"
+                ),
             )
 
         if dependency == Dependency.flash_attention:
@@ -108,7 +124,8 @@ def get_image(  # noqa: C901
 
         if dependency == Dependency.fouroversix:
             img = (
-                img.run_commands(
+                img.env({"CUDA_ARCHS": "100"})
+                .run_commands(
                     "git clone https://github.com/NVIDIA/cutlass.git "
                     f"{FOUROVERSIX_INSTALL_PATH}/third_party/cutlass",
                 )
@@ -134,10 +151,31 @@ def get_image(  # noqa: C901
                 )
             )
 
-            if disable_kernels:
-                img = img.env({"DISABLE_KERNEL_COMPILATION": "1"})
+            img = img.run_function(
+                install_fouroversix,
+                cpu=8,
+                memory=32 * 1024,
+            )
 
-            img = img.run_function(install_fouroversix, cpu=8, memory=32 * 1024)
+        if dependency == Dependency.fp_quant:
+            img = img.add_local_dir(
+                "third_party/fp-quant",
+                f"{FOUROVERSIX_INSTALL_PATH}/fpquant/fpquant_cli",
+                copy=True,
+            ).run_commands(
+                f"pip install {FOUROVERSIX_INSTALL_PATH}/fpquant/fpquant_cli/"
+                "inference_lib",
+            )
+
+        if dependency == Dependency.qutlass:
+            img = (
+                img.apt_install("cmake")
+                .run_commands(
+                    "git clone https://github.com/IST-DASlab/qutlass.git "
+                    f"{FOUROVERSIX_INSTALL_PATH}/third_party/qutlass",
+                )
+                .run_function(install_qutlass, gpu="B200", cpu=8, memory=32 * 1024)
+            )
 
     if extra_pip_dependencies is not None:
         img = img.uv_pip_install(*extra_pip_dependencies)

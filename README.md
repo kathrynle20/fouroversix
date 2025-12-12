@@ -11,7 +11,7 @@ If you have any questions, please get in touch or submit an issue.
 
 ## Setup
 
-To speed up build times, set `CUDA_ARCHS=100` (or `120` for RTX 50 and 60 Series GPUs).
+To speed up build times, set `CUDA_ARCHS=100` to only compile kernels for B-series GPUs (i.e. B200, GB200, GB300), or `CUDA_ARCHS=120` for RTX 50 and 60 Series GPUs (i.e. RTX 5090, RTX 6000).
 
 ```bash
 git clone --recursive https://github.com/mit-han-lab/fouroversix.git
@@ -29,16 +29,16 @@ If you don't have a Blackwell GPU, you may use our reference implementation, whi
 from fouroversix import AdaptiveBlockScalingRule, apply_ptq
 from transformers import AutoModelForCausalLM
 
-# Standard NVFP4 round-to-nearest quantization
+# NVFP4 using 4/6 with MSE block selection
 model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.2-1B")
 apply_ptq(model)
 
-# Four Over Six method using 4/6 with MSE block selection
+# Standard NVFP4 round-to-nearest quantization
 model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.2-1B")
 apply_ptq(
     model,
-    a_scale_rule=AdaptiveBlockScalingRule.mse,
-    w_scale_rule=AdaptiveBlockScalingRule.mse,
+    a_scale_rule=AdaptiveBlockScalingRule.always_6,
+    w_scale_rule=AdaptiveBlockScalingRule.always_6,
 )
 ```
 
@@ -53,10 +53,10 @@ from fouroversix import AdaptiveBlockScalingRule, quantize_to_fp4
 x = torch.randn(1024, 1024, dtype=torch.bfloat16, device="cuda")
 x_e2m1, x_e4m3, x_normconst = quantize_to_fp4(x)
 
-# With 4/6:
+# With standard NVFP4 round-to-nearest quantization:
 x_e2m1, x_e4m3, x_normconst = quantize_to_fp4(
     x,
-    scale_rule=AdaptiveBlockScalingRule.mse
+    scale_rule=AdaptiveBlockScalingRule.always_6,
 )
 ```
 
@@ -93,6 +93,7 @@ python -m scripts.ptq --model-name meta-llama/Llama-3.2-1B --ptq-method high_pre
 ```
 
 If you would prefer not to worry about setting up your local environment, or about acquiring a Blackwell GPU to run your experiments faster, you may run PTQ experiments on [Modal](https://modal.com/) by adding the `--modal` flag, and optionally the `--detach` flag which will enable you to CTRL+C.
+The first time you launch experiments on Modal, it may take several minutes to build everything, but following commands will reuse the cached images.
 
 ## Notes
 

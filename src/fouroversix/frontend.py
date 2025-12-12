@@ -73,7 +73,7 @@ def quantize_to_fp4(
     x: torch.Tensor,
     *,
     backend: QuantizeBackend | None = None,
-    scale_rule: AdaptiveBlockScalingRule = (AdaptiveBlockScalingRule.always_6),
+    scale_rule: AdaptiveBlockScalingRule = AdaptiveBlockScalingRule.always_6,
     block_scale_2d: bool = False,
     had: torch.Tensor | None = None,
     fp4_format: FP4Format = FP4Format.nvfp4,
