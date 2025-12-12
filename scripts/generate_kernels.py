@@ -111,7 +111,7 @@ def write_kernel(kernel: Kernel, autogen_dir: Path) -> None:
 
 def main(output_dir: str | None) -> None:
     if output_dir is None:
-        output_dir = Path(__file__).parent / "src" / "fouroversix" / "csrc" / "quantize"
+        output_dir = Path(__file__).parent.parent / "src" / "fouroversix" / "csrc" / "quantize"
     else:
         output_dir = Path(output_dir)
 
