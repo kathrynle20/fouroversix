@@ -206,7 +206,7 @@ class QuantizeBackend(str, Enum):
         self,
         x: torch.Tensor,
         *,
-        scale_rule: AdaptiveBlockScalingRule = AdaptiveBlockScalingRule.mse,  # noqa: ARG002
+        scale_rule: AdaptiveBlockScalingRule = AdaptiveBlockScalingRule.mse,
         block_scale_2d: bool = False,
         had: torch.Tensor | None = None,
         fp4_format: FP4Format = FP4Format.nvfp4,
@@ -217,6 +217,13 @@ class QuantizeBackend(str, Enum):
 
         if x.ndim != 2:  # noqa: PLR2004
             return False
+
+        if (
+            fp4_format == FP4Format.mxfp4
+            and scale_rule != AdaptiveBlockScalingRule.always_6
+        ):
+            msg = "MXFP4 quantization only supports the `always_6` scale rule"
+            raise ValueError(msg)
 
         if self == QuantizeBackend.cuda:
             if not torch.cuda.is_available() or torch.cuda.get_device_capability()[

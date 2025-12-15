@@ -34,6 +34,7 @@ def build_forward(
                 self.weight,
                 scale_rule=w_scale_rule,
                 block_scale_2d=w_scale_2d,
+                fp4_format=fp4_format,
                 **w_quantize_kwargs,
             )
             del self.weight
@@ -63,7 +64,11 @@ def build_forward(
                 out_shape=(input.shape[1], out_n),
                 a_quantize_kwargs={
                     "scale_rule": a_scale_rule,
+                    "fp4_format": fp4_format,
                     **a_quantize_kwargs,
+                },
+                b_quantize_kwargs={
+                    "fp4_format": fp4_format,
                 },
             )
 
