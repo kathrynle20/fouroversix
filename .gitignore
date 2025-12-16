@@ -9,3 +9,5 @@ exp/
 *.ipynb
 .cache/
 ptq_logs/
+dist/
+*.egg-info/

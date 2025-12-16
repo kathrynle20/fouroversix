@@ -1,14 +1,20 @@
 import functools
 import os
+import platform
 import subprocess
+import sys
 import warnings
 from pathlib import Path
 from typing import Any
 
+import torch
 from packaging.version import Version, parse
 from setuptools import setup
 from torch.utils.cpp_extension import CUDA_HOME, BuildExtension, CUDAExtension
 
+BASE_WHEEL_URL = "https://github.com/mit-han-lab/fouroversix/releases/download"
+PACKAGE_NAME = "fouroversix"
+PACKAGE_VERSION = "0.1.0"
 SKIP_CUDA_BUILD = os.getenv("SKIP_CUDA_BUILD", "0") == "1"
 
 
@@ -18,6 +24,14 @@ def get_cuda_archs() -> list[str]:
 
 
 def get_cuda_bare_metal_version() -> Version:
+    if CUDA_HOME is None:
+        msg = (
+            "CUDA_HOME is not set, indicating that CUDA may not be installed. If "
+            "you're trying to install fouroversix without CUDA support, set "
+            "SKIP_CUDA_BUILD=1 before running pip install."
+        )
+        raise RuntimeError(msg)
+
     raw_output = subprocess.check_output(  # noqa: S603
         [CUDA_HOME + "/bin/nvcc", "-V"],
         universal_newlines=True,
@@ -68,6 +82,42 @@ def get_cuda_gencodes() -> list[str]:
                 cc_flags += ["-gencode", "arch=compute_120,code=sm_120"]
 
     return cc_flags
+
+
+def get_platform() -> str:
+    if sys.platform.startswith("linux"):
+        return f"linux_{platform.uname().machine}"
+    if sys.platform == "darwin":
+        mac_version = ".".join(platform.mac_ver()[0].split(".")[:2])
+        return f"macosx_{mac_version}_x86_64"
+    if sys.platform == "win32":
+        return "win_amd64"
+
+    msg = f"Unsupported platform: {sys.platform}"
+    raise ValueError(msg)
+
+
+def get_package_version() -> str:
+    if CUDA_HOME is None:
+        return PACKAGE_VERSION
+
+    torch_version_raw = parse(torch.__version__)
+    python_version = f"cp{sys.version_info.major}{sys.version_info.minor}"
+    platform_name = get_platform()
+    torch_version = f"{torch_version_raw.major}.{torch_version_raw.minor}"
+    cxx11_abi = str(torch._C._GLIBCXX_USE_CXX11_ABI).upper()  # noqa: SLF001
+
+    # We only compile for CUDA 12.8 to save CI time. Minor versions should be
+    # compatible.
+    torch_cuda_version = parse("12.8")
+    cuda_version = f"cu{torch_cuda_version.major}"
+
+    tag = (
+        f"{cuda_version}torch{torch_version}cxx11abi{cxx11_abi}-{python_version}-"
+        f"{python_version}-{platform_name}"
+    )
+
+    return f"{PACKAGE_VERSION}+{tag}"
 
 
 class NinjaBuildExtension(BuildExtension):
@@ -156,7 +206,8 @@ if __name__ == "__main__":
         ]
 
     setup(
-        name="fouroversix",
+        name=PACKAGE_NAME,
+        version=get_package_version(),
         ext_modules=ext_modules,
         cmdclass={"build_ext": NinjaBuildExtension},
         include_package_data=True,
