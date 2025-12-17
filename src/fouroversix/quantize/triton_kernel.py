@@ -7,17 +7,24 @@ from typing import TYPE_CHECKING
 import torch
 import triton
 import triton.language as tl
-from fouroversix.quantize.reference import get_nvfp4_tensor_scale
+from fouroversix.quantize.reference import (
+    E2M1_MAX_VALUE,
+    E4M3_MAX_VALUE,
+    E4M3_MIN_POSITIVE_NORMAL,
+    MIN_ALLOWED_NORM_CONSTANT,
+    get_nvfp4_tensor_scale,
+)
 from fouroversix.utils import AdaptiveBlockScalingRule
 from triton.tools.tensor_descriptor import TensorDescriptor
 
 if TYPE_CHECKING:
     from fouroversix.utils import FP4Format, RoundStyle
 
-E2M1_MAX_VALUE = tl.constexpr(6)
-E4M3_MIN_POSITIVE_VALUE = tl.constexpr(0.009765625)
-E4M3_MAX_VALUE = tl.constexpr(448)
+E2M1_MAX_VALUE = tl.constexpr(E2M1_MAX_VALUE)
+E4M3_MAX_VALUE = tl.constexpr(E4M3_MAX_VALUE)
+E4M3_MIN_POSITIVE_NORMAL = tl.constexpr(E4M3_MIN_POSITIVE_NORMAL)
 FOUROVERSIX_AUTOTUNE = os.getenv("FOUROVERSIX_AUTOTUNE", "0") == "1"
+MIN_ALLOWED_NORM_CONSTANT = tl.constexpr(MIN_ALLOWED_NORM_CONSTANT)
 SCALE_MEGABLOCK_SIZE = tl.constexpr(512)
 
 SCALE_RULE_ABS_MAX = tl.constexpr(AdaptiveBlockScalingRule.abs_max.value)
@@ -49,9 +56,9 @@ def fp32_to_scaled_fp4_kernel_four_over_six(  # noqa: C901, PLR0912, PLR0915
     # Calculate six blocks
     x_scales_hp_6 = tl.max(x_scale_blocks.abs(), axis=-1) / tl.maximum(
         E2M1_MAX_VALUE * norm_constant,
-        1e-12,
+        MIN_ALLOWED_NORM_CONSTANT,
     )
-    x_scales_hp_6 = tl.clamp(x_scales_hp_6, E4M3_MIN_POSITIVE_VALUE, E4M3_MAX_VALUE)
+    x_scales_hp_6 = tl.clamp(x_scales_hp_6, E4M3_MIN_POSITIVE_NORMAL, E4M3_MAX_VALUE)
     x_scales_6 = x_scales_hp_6.to(tl.float8e4nv)
 
     if BLOCK_SCALE_2D:
@@ -78,9 +85,9 @@ def fp32_to_scaled_fp4_kernel_four_over_six(  # noqa: C901, PLR0912, PLR0915
     # Calculate four blocks
     x_scales_hp_4 = tl.max(x_scale_blocks.abs(), axis=-1) / tl.maximum(
         (4 * norm_constant.to(tl.bfloat16)).to(tl.float32),
-        1e-12,
+        MIN_ALLOWED_NORM_CONSTANT,
     )
-    x_scales_hp_4 = tl.clamp(x_scales_hp_4, E4M3_MIN_POSITIVE_VALUE, E4M3_MAX_VALUE)
+    x_scales_hp_4 = tl.clamp(x_scales_hp_4, E4M3_MIN_POSITIVE_NORMAL, E4M3_MAX_VALUE)
     x_scales_4 = x_scales_hp_4.to(tl.float8e4nv)
 
     if BLOCK_SCALE_2D:
@@ -332,7 +339,7 @@ def fp32_to_scaled_fp4_kernel(
             E2M1_MAX_VALUE * norm_constant,
             1e-12,
         )
-        x_scales_hp = tl.clamp(x_scales_hp, E4M3_MIN_POSITIVE_VALUE, E4M3_MAX_VALUE)
+        x_scales_hp = tl.clamp(x_scales_hp, E4M3_MIN_POSITIVE_NORMAL, E4M3_MAX_VALUE)
         x_scales = x_scales_hp.to(tl.float8e4nv)
 
         if BLOCK_SCALE_2D:

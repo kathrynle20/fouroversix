@@ -7,6 +7,10 @@ from fouroversix import (
     RoundStyle,
     quantize_to_fp4,
 )
+from fouroversix.quantize.reference import (
+    E4M3_MIN_POSITIVE_NORMAL,
+    MIN_ALLOWED_NORM_CONSTANT,
+)
 from scipy.linalg import hadamard
 
 
@@ -35,7 +39,7 @@ from scipy.linalg import hadamard
 )
 @pytest.mark.parametrize("round_style", [RoundStyle.nearest, RoundStyle.stochastic])
 @pytest.mark.parametrize("transpose", ["transpose", "no_transpose"])
-def test_correctness(
+def test_backend_outputs_are_consistent(
     input_type: str,
     input_shape: tuple[int, int],
     backend_a: QuantizeBackend,
@@ -48,6 +52,9 @@ def test_correctness(
     scale_rule: AdaptiveBlockScalingRule,
     transpose: str,
 ) -> None:
+    if not backend_a.is_available() or not backend_b.is_available():
+        pytest.skip("Backend is not available")
+
     block_scale_2d = block_scale_2d == "block_scale_2d"
     had = had == "had"
     transpose = transpose == "transpose"
@@ -87,3 +94,41 @@ def test_correctness(
     assert torch.allclose(x_normconst_a, x_normconst_b)
     assert torch.allclose(x_e2m1_a, x_e2m1_b)
     assert torch.allclose(x_sf_a.bfloat16(), x_sf_b.bfloat16())
+
+
+@pytest.mark.parametrize(
+    "scale_rule",
+    [
+        AdaptiveBlockScalingRule.abs_max,
+        AdaptiveBlockScalingRule.l1_norm,
+        AdaptiveBlockScalingRule.mse,
+        AdaptiveBlockScalingRule.always_4,
+        AdaptiveBlockScalingRule.always_6,
+    ],
+)
+def test_zeros(scale_rule: AdaptiveBlockScalingRule) -> None:
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    x = torch.zeros(1024, 1024, dtype=torch.bfloat16, device=device)
+    x_e2m1, x_sf, x_normconst = quantize_to_fp4(
+        x,
+        backend=QuantizeBackend.pytorch,
+        scale_rule=scale_rule,
+    )
+
+    x_e2m1_expected = torch.zeros(1024, 512, dtype=torch.uint8, device=device)
+    x_sf_expected = torch.full(
+        (1024 * 1024 // 16,),
+        E4M3_MIN_POSITIVE_NORMAL,
+        dtype=torch.float8_e4m3fn,
+        device=device,
+    )
+    x_normconst_expected = torch.tensor(
+        MIN_ALLOWED_NORM_CONSTANT,
+        dtype=torch.bfloat16,
+        device=device,
+    )
+
+    assert torch.allclose(x_normconst, x_normconst_expected)
+    assert torch.allclose(x_e2m1, x_e2m1_expected)
+    assert torch.allclose(x_sf.bfloat16(), x_sf_expected.bfloat16())

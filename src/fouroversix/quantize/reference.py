@@ -5,8 +5,10 @@ from typing import Literal
 import torch
 from fouroversix.utils import AdaptiveBlockScalingRule, FP4Format, RoundStyle
 
+MIN_ALLOWED_NORM_CONSTANT = 1e-12
 E2M1_MAX_VALUE = 6
 E4M3_MAX_VALUE = 448
+E4M3_MIN_POSITIVE_NORMAL = 0.015625
 
 ScaleFactorsSimulationMode = Literal["high_precision"] | None
 ValueSimulationMode = (
@@ -109,7 +111,7 @@ def get_nvfp4_tensor_scale(
         AdaptiveBlockScalingRule.always_6: E2M1_MAX_VALUE * E4M3_MAX_VALUE,
     }.get(scale_rule, 384 * 4)
 
-    return x.abs().max().unsqueeze(0) / scale
+    return (x.abs().max().unsqueeze(0) / scale).clamp(min=MIN_ALLOWED_NORM_CONSTANT)
 
 
 def quantize_bf16_to_scaled_fp4(  # noqa: C901, PLR0912, PLR0915

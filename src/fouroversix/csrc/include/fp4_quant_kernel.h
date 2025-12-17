@@ -224,7 +224,7 @@ namespace fouroversix
         constexpr int kNumGroupsInRow = Kernel_traits::kNumGroupsInRow;
         constexpr float E2M1_MAX_VALUE = Kernel_traits::E2M1_MAX_VALUE;
         constexpr float E4M3_MAX_VALUE = Kernel_traits::E4M3_MAX_VALUE;
-        constexpr float E4M3_MIN_POSITIVE_VALUE = Kernel_traits::E4M3_MIN_POSITIVE_VALUE;
+        constexpr float E4M3_MIN_POSITIVE_NORMAL = Kernel_traits::E4M3_MIN_POSITIVE_NORMAL;
         constexpr int TS_SCALE = Is_4o6 ? (384 * 4) : (E4M3_MAX_VALUE * E2M1_MAX_VALUE);
 
         constexpr int kSmemBlockInRow = int(kNumGroupsInRow / 4);
@@ -353,10 +353,10 @@ namespace fouroversix
                 float sf_[2] = {
                     clamp(
                         static_cast<float>(group_max / sf_scale_4),
-                        E4M3_MIN_POSITIVE_VALUE, E4M3_MAX_VALUE),
+                        E4M3_MIN_POSITIVE_NORMAL, E4M3_MAX_VALUE),
                     clamp(
                         static_cast<float>(group_max / sf_scale_6),
-                        E4M3_MIN_POSITIVE_VALUE, E4M3_MAX_VALUE)};
+                        E4M3_MIN_POSITIVE_NORMAL, E4M3_MAX_VALUE)};
 
                 sf_[0] = static_cast<float>(static_cast<ElementScaleFactor>(sf_[0]));
                 sf_[1] = static_cast<float>(static_cast<ElementScaleFactor>(sf_[1]));
@@ -374,13 +374,13 @@ namespace fouroversix
                 {
                     sf_val = clamp(
                         static_cast<float>(group_max / sf_scale_6),
-                        E4M3_MIN_POSITIVE_VALUE, E4M3_MAX_VALUE);
+                        E4M3_MIN_POSITIVE_NORMAL, E4M3_MAX_VALUE);
                 }
                 else if constexpr (kAdaptiveBlockScalingRuleType == AdaptiveBlockScalingRuleType::ALL_4)
                 {
                     sf_val = clamp(
                         static_cast<float>(group_max / sf_scale_4),
-                        E4M3_MIN_POSITIVE_VALUE, E4M3_MAX_VALUE);
+                        E4M3_MIN_POSITIVE_NORMAL, E4M3_MAX_VALUE);
                 }
                 else
                 {

@@ -202,7 +202,28 @@ class QuantizeBackend(str, Enum):
         msg = f"No backend found for the given parameters: {kwargs}"
         raise ValueError(msg)
 
-    def is_supported(  # noqa: PLR0911
+    def is_available(self) -> bool:
+        """Check if the backend can be used given the CUDA device and installation."""
+
+        if self == QuantizeBackend.cuda:
+            if not torch.cuda.is_available() or torch.cuda.get_device_capability()[
+                0
+            ] not in [SM_100, SM_110, SM_120]:
+                return False
+
+            try:
+                import fouroversix._C  # noqa: F401
+            except ModuleNotFoundError:
+                return False
+        elif self == QuantizeBackend.triton:
+            if not torch.cuda.is_available() or torch.cuda.get_device_capability()[
+                0
+            ] not in [SM_100, SM_110, SM_120]:
+                return False
+
+        return True
+
+    def is_supported(
         self,
         x: torch.Tensor,
         *,
@@ -218,6 +239,9 @@ class QuantizeBackend(str, Enum):
         if x.ndim != 2:  # noqa: PLR2004
             return False
 
+        if not self.is_available():
+            return False
+
         if (
             fp4_format == FP4Format.mxfp4
             and scale_rule != AdaptiveBlockScalingRule.always_6
@@ -226,16 +250,6 @@ class QuantizeBackend(str, Enum):
             raise ValueError(msg)
 
         if self == QuantizeBackend.cuda:
-            if not torch.cuda.is_available() or torch.cuda.get_device_capability()[
-                0
-            ] not in [SM_100, SM_110, SM_120]:
-                return False
-
-            try:
-                import fouroversix._C  # noqa: F401
-            except ModuleNotFoundError:
-                return False
-
             return (
                 had is None
                 and fp4_format == FP4Format.nvfp4
@@ -248,11 +262,6 @@ class QuantizeBackend(str, Enum):
             return True
 
         if self == QuantizeBackend.triton:
-            if not torch.cuda.is_available() or torch.cuda.get_device_capability()[
-                0
-            ] not in [SM_100, SM_110, SM_120]:
-                return False
-
             if round_style == RoundStyle.stochastic:
                 return torch.cuda.get_device_capability()[0] == SM_100
 
