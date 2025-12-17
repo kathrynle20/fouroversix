@@ -66,8 +66,10 @@ jobs:
         # https://github.com/easimon/maximize-build-space/tree/test-report
         run: |
           sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
           sudo rm -rf /opt/ghc
           sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
 
       - name: Set up swap space
         if: runner.os == 'Linux'
@@ -85,7 +87,8 @@ jobs:
           # default method is "local", and we're hitting some error with caching for CUDA 11.8 and 12.1
           # method: ${{ (inputs.cuda-version == '11.8.0' || inputs.cuda-version == '12.1.0') && 'network' || 'local' }}
           method: "network"
-          sub-packages: '["nvcc", "cusparse"]'
+          sub-packages: '["nvcc"]'
+          non-cuda-sub-packages: '["libcublas-dev", "libcusolver-dev", "libcusparse-dev"]'
 
       - name: Install PyTorch ${{ inputs.torch-version }}+cu${{ inputs.cuda-version }}
         run: |
