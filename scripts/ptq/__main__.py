@@ -3,6 +3,7 @@ from typing import Any
 
 import click
 import modal
+from fouroversix import QuantizeBackend
 from fouroversix.utils import AdaptiveBlockScalingRule, DataType, FP4Format
 
 from ..resources import app, get_image
@@ -61,9 +62,10 @@ def run_ptq(
 @click.option("--dtype", type=DataType, default=DataType.bfloat16)
 @click.option("--fp4-format", type=FP4Format, default=FP4Format.nvfp4)
 @click.option("--limit", type=int)
-@click.option("--ptq-method", "-p", type=PTQMethod, multiple=True, required=True)
 @click.option("--modal", is_flag=True)
 @click.option("--model-name", "-m", type=str, multiple=True, required=True)
+@click.option("--ptq-method", "-p", type=PTQMethod, multiple=True, required=True)
+@click.option("--quantize-backend", type=QuantizeBackend, default=None)
 @click.option("--tasks", "-t", type=str, multiple=True, default=["wikitext"])
 @click.option("--trust-remote-code", is_flag=True)
 @click.option(
@@ -94,13 +96,18 @@ def cli(**kwargs: dict[str, Any]) -> None:  # noqa: C901, PLR0912
 
     # Validate options
     for ptq_method in ptq_methods:
-        if kwargs.get("fp4_format") == FP4Format.mxfp4 and ptq_method != PTQMethod.rtn:
-            msg = "MXFP4 is only supported with RTN"
-            raise ValueError(msg)
+        if ptq_method != PTQMethod.rtn:
+            if kwargs.get("fp4_format") == FP4Format.mxfp4:
+                msg = "MXFP4 is only supported with RTN"
+                raise ValueError(msg)
 
-        if kwargs.get("weight_scale_2d") and ptq_method != PTQMethod.rtn:
-            msg = "2D weight scales are only supported with RTN"
-            raise ValueError(msg)
+            if kwargs.get("quantize_backend") is not None:
+                msg = "Setting the quantization backend is only supported with RTN"
+                raise ValueError(msg)
+
+            if kwargs.get("weight_scale_2d"):
+                msg = "2D weight scales are only supported with RTN"
+                raise ValueError(msg)
 
     if use_modal:
         with modal.enable_output(), app.run(detach=detach):

@@ -14,7 +14,7 @@ from fouroversix.quantize.reference import (
 from scipy.linalg import hadamard
 
 
-@pytest.mark.parametrize("input_type", ["zeros", "ones", "randn"])
+@pytest.mark.parametrize("input_type", ["zeros", "ones", "rand01", "randn", "fixed"])
 @pytest.mark.parametrize("input_shape", [(1024, 1024)])
 @pytest.mark.parametrize(
     ("backend_a", "backend_b"),
@@ -52,6 +52,8 @@ def test_backend_outputs_are_consistent(
     scale_rule: AdaptiveBlockScalingRule,
     transpose: str,
 ) -> None:
+    torch.set_printoptions(precision=10)
+
     if not backend_a.is_available() or not backend_b.is_available():
         pytest.skip("Backend is not available")
 
@@ -63,8 +65,49 @@ def test_backend_outputs_are_consistent(
         x = torch.zeros(*input_shape, dtype=torch.bfloat16, device="cuda")
     elif input_type == "ones":
         x = torch.ones(*input_shape, dtype=torch.bfloat16, device="cuda")
+    elif input_type == "rand01":
+        x = torch.randint(0, 2, input_shape, dtype=int, device="cuda").to(
+            torch.bfloat16,
+        )
     elif input_type == "randn":
         x = torch.randn(*input_shape, dtype=torch.bfloat16, device="cuda")
+    elif input_type == "fixed":
+        x = torch.zeros(*input_shape, dtype=torch.bfloat16, device="cuda")
+        x[0, :16] = torch.tensor(
+            [
+                0.3125000000,
+                0.3671875000,
+                2.0468750000,
+                -0.4863281250,
+                0.6640625000,
+                -0.2001953125,
+                0.7070312500,
+                -1.5000000000,
+                -0.5742187500,
+                0.0639648438,
+                -1.4921875000,
+                -0.3417968750,
+                -0.3828125000,
+                -0.9492187500,
+                0.2929687500,
+                1.5390625000,
+            ],
+            device="cuda:0",
+            dtype=torch.bfloat16,
+        )
+        x[0, 16] = 4.9062500000
+    elif input_type == "fixed2":
+        x = torch.zeros(*input_shape, dtype=torch.bfloat16, device="cuda")
+        x[0, :3] = torch.tensor(
+            [
+                0.1767578125,
+                -1.3203125000,
+                2.1875000000,
+            ],
+            device="cuda:0",
+            dtype=torch.bfloat16,
+        )
+        x[0, 16] = 4.875
     else:
         msg = f"Invalid input type: {input_type}"
         raise ValueError(msg)
@@ -91,6 +134,13 @@ def test_backend_outputs_are_consistent(
         backend=backend_b,
         **kwargs,
     )
+
+    if input_type == "fixed":
+        x_sf_a = x_sf_a[0:2]
+        x_sf_b = x_sf_b[0:2]
+        x_e2m1_a = x_e2m1_a[0, 0:8]
+        x_e2m1_b = x_e2m1_b[0, 0:8]
+
     assert torch.allclose(x_normconst_a, x_normconst_b)
     assert torch.allclose(x_sf_a.bfloat16(), x_sf_b.bfloat16())
     assert torch.allclose(x_e2m1_a, x_e2m1_b)

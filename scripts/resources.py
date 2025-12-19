@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import shutil
 import subprocess
 from enum import Enum
 from pathlib import Path
@@ -13,6 +15,7 @@ if TYPE_CHECKING:
 
 FOUROVERSIX_CACHE_PATH = Path("/fouroversix")
 FOUROVERSIX_INSTALL_PATH = Path("/root/fouroversix")
+KERNEL_DEV_MODE = os.getenv("KERNEL_DEV_MODE", "0") == "1"
 
 app = modal.App("fouroversix")
 cache_volume = modal.Volume.from_name("fouroversix", create_if_missing=True)
@@ -38,6 +41,22 @@ cuda_version_to_image_tag = {
 }
 
 
+def build_fouroversix_ext() -> None:
+    shutil.copytree(
+        FOUROVERSIX_CACHE_PATH / "build",
+        FOUROVERSIX_INSTALL_PATH / "build",
+    )
+    subprocess.run(
+        ["python", "setup.py", "build_ext", "--inplace"],  # noqa: S607
+        check=False,
+    )
+    shutil.copytree(
+        FOUROVERSIX_INSTALL_PATH / "build",
+        FOUROVERSIX_CACHE_PATH / "build",
+        dirs_exist_ok=True,
+    )
+
+
 def install_flash_attn() -> None:
     subprocess.run(
         ["pip", "install", "flash-attn", "--no-build-isolation"],  # noqa: S607
@@ -51,7 +70,21 @@ def install_fouroversix() -> None:
             "pip",
             "install",
             "--no-deps",
+            "--no-build-isolation",
             "-e",
+            FOUROVERSIX_INSTALL_PATH.as_posix(),
+        ],
+        check=False,
+    )
+
+
+def install_fouroversix_non_editable() -> None:
+    subprocess.run(  # noqa: S603
+        [  # noqa: S607
+            "pip",
+            "install",
+            "--no-deps",
+            "--no-build-isolation",
             FOUROVERSIX_INSTALL_PATH.as_posix(),
         ],
         check=False,
@@ -105,6 +138,7 @@ def get_image(  # noqa: C901, PLR0912
                 lambda x: not x.startswith("torch"),
                 pyproject_data["build-system"]["requires"],
             ),
+            *pyproject_data["project"]["optional-dependencies"]["tests"],
             "numpy",
         )
         .uv_pip_install(
@@ -165,18 +199,43 @@ def get_image(  # noqa: C901, PLR0912
                     f"{FOUROVERSIX_INSTALL_PATH}/src/fouroversix/__init__.py",
                     copy=True,
                 )
-                .add_local_dir(
-                    "src/fouroversix/csrc",
-                    f"{FOUROVERSIX_INSTALL_PATH}/src/fouroversix/csrc",
-                    copy=True,
-                )
             )
 
-            img = img.run_function(
-                install_fouroversix,
-                cpu=8,
-                memory=32 * 1024,
+            if KERNEL_DEV_MODE:
+                img = (
+                    img.add_local_file(
+                        "README.md",
+                        f"{FOUROVERSIX_INSTALL_PATH}/README.md",
+                        copy=True,
+                    )
+                    .add_local_file(
+                        "LICENSE.md",
+                        f"{FOUROVERSIX_INSTALL_PATH}/LICENSE.md",
+                        copy=True,
+                    )
+                    .workdir(FOUROVERSIX_INSTALL_PATH)
+                    .env({"MAX_JOBS": "32"})
+                )
+
+            img = img.add_local_dir(
+                "src/fouroversix/csrc",
+                f"{FOUROVERSIX_INSTALL_PATH}/src/fouroversix/csrc",
+                copy=True,
             )
+
+            if KERNEL_DEV_MODE:
+                img = img.run_function(
+                    build_fouroversix_ext,
+                    cpu=32,
+                    memory=64 * 1024,
+                    volumes={FOUROVERSIX_CACHE_PATH.as_posix(): cache_volume},
+                ).workdir("/root")
+            else:
+                img = img.run_function(
+                    install_fouroversix,
+                    cpu=8,
+                    memory=32 * 1024,
+                )
 
         if dependency == Dependency.fp_quant:
             img = img.add_local_dir(
@@ -203,14 +262,6 @@ def get_image(  # noqa: C901, PLR0912
 
     img = img.env({"HF_HOME": FOUROVERSIX_CACHE_PATH.as_posix(), **(extra_env or {})})
 
-    if include_tests:
-        img = img.uv_pip_install(
-            *pyproject_data["project"]["optional-dependencies"]["tests"],
-        ).add_local_dir(
-            "tests",
-            f"{FOUROVERSIX_INSTALL_PATH}/tests",
-        )
-
     if run_before_copy is not None:
         img = run_before_copy(img)
 
@@ -221,7 +272,18 @@ def get_image(  # noqa: C901, PLR0912
             img = img.add_local_dir(
                 "src",
                 f"{FOUROVERSIX_INSTALL_PATH}/src",
-                copy=deploy,
+                copy=deploy or KERNEL_DEV_MODE,
             )
+
+            if KERNEL_DEV_MODE:
+                img = img.run_function(
+                    install_fouroversix_non_editable,
+                    cpu=8,
+                    memory=32 * 1024,
+                    volumes={FOUROVERSIX_CACHE_PATH.as_posix(): cache_volume},
+                )
+
+    if include_tests:
+        img = img.add_local_dir("tests", f"{FOUROVERSIX_INSTALL_PATH}/tests")
 
     return img
