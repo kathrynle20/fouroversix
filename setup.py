@@ -266,7 +266,7 @@ else:
                 "-DCUTLASS_DEBUG_TRACE_LEVEL=3",
                 "-DCUTLASS_DEBUG_ENABLE=1",
                 "-g",
-            ]
+            ],
         )
     else:
         cxx_compile_args.extend(["-O3"])

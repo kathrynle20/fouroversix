@@ -46,7 +46,7 @@ class MatmulBackend(str, Enum):
 
         return True
 
-    def fp4_matmul(  # noqa: C901, PLR0912
+    def fp4_matmul(
         self,
         a_e2m1: torch.Tensor,
         a_sf: torch.Tensor,
@@ -133,7 +133,10 @@ class MatmulBackend(str, Enum):
             )
 
             if gemm_fn is None:
-                msg = f"No gemm function found for the given device capability and out_dtype: {torch.cuda.get_device_capability()[0]}, {out_dtype}"
+                msg = (
+                    "No gemm function found for the given device capability and "
+                    f"out_dtype: {torch.cuda.get_device_capability()[0]}, {out_dtype}"
+                )
                 raise ValueError(msg)
 
             out = gemm_fn(a_e2m1, b_e2m1, a_sf, b_sf, alpha)
