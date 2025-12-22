@@ -90,7 +90,9 @@ class MatmulBackend(str, Enum):
             from .ops import (
                 gemm_mxfp4mxfp4_accum_fp32_out_bf16_tnt,
                 gemm_nvfp4nvfp4_accum_fp32_out_bf16_tnt,
+                gemm_nvfp4nvfp4_accum_fp32_out_bf16_tnt_sm120,
                 gemm_nvfp4nvfp4_accum_fp32_out_fp16_tnt,
+                gemm_nvfp4nvfp4_accum_fp32_out_fp16_tnt_sm120,
             )
 
             if fp4_format == FP4Format.mxfp4:
@@ -98,42 +100,43 @@ class MatmulBackend(str, Enum):
             elif fp4_format == FP4Format.nvfp4:
                 alpha = (a_normconst * b_normconst).to(torch.float32)
 
-            if fp4_format == FP4Format.mxfp4:
-                if out_dtype == DataType.bfloat16:
-                    out = gemm_mxfp4mxfp4_accum_fp32_out_bf16_tnt(
-                        a_e2m1,
-                        b_e2m1,
-                        a_sf,
-                        b_sf,
-                        alpha,
-                    )
-                else:
-                    msg = f"Invalid out_dtype for mxfp4: {out_dtype}"
-                    raise ValueError(msg)
-            elif fp4_format == FP4Format.nvfp4:
-                if out_dtype == DataType.bfloat16:
-                    out = gemm_nvfp4nvfp4_accum_fp32_out_bf16_tnt(
-                        a_e2m1,
-                        b_e2m1,
-                        a_sf,
-                        b_sf,
-                        alpha,
-                    )
-                elif out_dtype == DataType.float16:
-                    out = gemm_nvfp4nvfp4_accum_fp32_out_fp16_tnt(
-                        a_e2m1,
-                        b_e2m1,
-                        a_sf,
-                        b_sf,
-                        alpha,
-                    )
-                else:
-                    msg = f"Invalid out_dtype for nvfp4: {out_dtype}"
-                    raise ValueError(msg)
-            else:
-                msg = f"Invalid fp4_format: {fp4_format}"
+            gemm_fns = {
+                (
+                    SM_100,
+                    FP4Format.mxfp4,
+                    DataType.bfloat16,
+                ): gemm_mxfp4mxfp4_accum_fp32_out_bf16_tnt,
+                (
+                    SM_100,
+                    FP4Format.nvfp4,
+                    DataType.bfloat16,
+                ): gemm_nvfp4nvfp4_accum_fp32_out_bf16_tnt,
+                (
+                    SM_120,
+                    FP4Format.nvfp4,
+                    DataType.bfloat16,
+                ): gemm_nvfp4nvfp4_accum_fp32_out_bf16_tnt_sm120,
+                (
+                    SM_100,
+                    FP4Format.nvfp4,
+                    DataType.float16,
+                ): gemm_nvfp4nvfp4_accum_fp32_out_fp16_tnt,
+                (
+                    SM_120,
+                    FP4Format.nvfp4,
+                    DataType.float16,
+                ): gemm_nvfp4nvfp4_accum_fp32_out_fp16_tnt_sm120,
+            }
+
+            gemm_fn = gemm_fns.get(
+                (torch.cuda.get_device_capability()[0], fp4_format, out_dtype),
+            )
+
+            if gemm_fn is None:
+                msg = f"No gemm function found for the given device capability and out_dtype: {torch.cuda.get_device_capability()[0]}, {out_dtype}"
                 raise ValueError(msg)
 
+            out = gemm_fn(a_e2m1, b_e2m1, a_sf, b_sf, alpha)
             return out[: out_shape[0], : out_shape[1]] if out_shape is not None else out
 
         if self == MatmulBackend.pytorch:

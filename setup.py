@@ -18,6 +18,7 @@ BASE_WHEEL_URL = "https://github.com/mit-han-lab/fouroversix/releases/download"
 PACKAGE_NAME = "fouroversix"
 PACKAGE_VERSION = "0.2.0.dev2"
 
+CUTLASS_DEBUG = os.getenv("CUTLASS_DEBUG", "0") == "1"
 FORCE_BUILD = os.getenv("FORCE_BUILD", "0") == "1"
 FORCE_CXX11_ABI = os.getenv("FORCE_CXX11_ABI", "0") == "1"
 SKIP_CUDA_BUILD = os.getenv("SKIP_CUDA_BUILD", "0") == "1"
@@ -243,27 +244,39 @@ else:
         for ext in ["**/*.cu", "**/*.cpp"]
         for path in kernels_dir.glob(ext)
     ]
+
+    cxx_compile_args = ["-std=c++17"]
+    nvcc_compile_args = [
+        "-std=c++17",
+        "--expt-relaxed-constexpr",
+        "--use_fast_math",
+        "-Xcompiler",
+        "-funroll-loops",
+        "-Xcompiler",
+        "-ffast-math",
+        "-Xcompiler",
+        "-finline-functions",
+        *get_cuda_gencodes(),
+    ]
+
+    if CUTLASS_DEBUG:
+        nvcc_compile_args.extend(
+            [
+                "-O0",
+                "-DCUTLASS_DEBUG_TRACE_LEVEL=3",
+                "-DCUTLASS_DEBUG_ENABLE=1",
+                "-g",
+            ]
+        )
+    else:
+        cxx_compile_args.extend(["-O3"])
+        nvcc_compile_args.extend(["-O3", "-DNDEBUG"])
+
     ext_modules = [
         CUDAExtension(
             "fouroversix._C",
             sources,
-            extra_compile_args={
-                "cxx": ["-O3", "-std=c++17"],
-                "nvcc": [
-                    "-O3",
-                    "-std=c++17",
-                    "--expt-relaxed-constexpr",
-                    "--use_fast_math",
-                    "-DNDEBUG",
-                    "-Xcompiler",
-                    "-funroll-loops",
-                    "-Xcompiler",
-                    "-ffast-math",
-                    "-Xcompiler",
-                    "-finline-functions",
-                    *get_cuda_gencodes(),
-                ],
-            },
+            extra_compile_args={"cxx": cxx_compile_args, "nvcc": nvcc_compile_args},
             include_dirs=[
                 setup_dir / "third_party/cutlass/examples/common",
                 setup_dir / "third_party/cutlass/include",

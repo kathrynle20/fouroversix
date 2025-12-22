@@ -45,8 +45,9 @@ namespace fouroversix
               int AlignmentB = 32,
               typename LayoutATag = cutlass::layout::RowMajor,
               typename LayoutBTag = cutlass::layout::ColumnMajor,
-              typename ElementD = cutlass::bfloat16_t>
-    torch::Tensor gemm_fp4fp4_accum_fp32_out_bf16(torch::Tensor const &A, torch::Tensor const &B, torch::Tensor const &A_sf, torch::Tensor const &B_sf, torch::Tensor const &alpha)
+              typename ElementD = cutlass::bfloat16_t,
+              typename ArchTag = cutlass::arch::Sm100>
+    torch::Tensor gemm_fp4fp4_accum_fp32(torch::Tensor const &A, torch::Tensor const &B, torch::Tensor const &A_sf, torch::Tensor const &B_sf, torch::Tensor const &alpha)
     {
         // C/D matrix configuration
         using ElementC = void;                        // Element type for C matrix operand
@@ -58,7 +59,6 @@ namespace fouroversix
 
         // Kernel functional config
         using ElementAccumulator = float;                                // Element type for internal accumulation
-        using ArchTag = cutlass::arch::Sm100;                            // Tag indicating the minimum SM that supports the intended feature
         using OperatorClass = cutlass::arch::OpClassBlockScaledTensorOp; // Operator class tag
 
         using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -154,7 +154,7 @@ namespace fouroversix
     {
         /* MXFP4 */
         m.impl("gemm_mxfp4mxfp4_accum_fp32_out_bf16_tnt",
-               &gemm_fp4fp4_accum_fp32_out_bf16<
+               &gemm_fp4fp4_accum_fp32<
                    cutlass::mx_float4_t<cutlass::float_e2m1_t>,
                    Shape<_256, _256, _256>,
                    Shape<_4, _1, _1>,
@@ -162,14 +162,14 @@ namespace fouroversix
 
         /* NVFP4 */
         m.impl("gemm_nvfp4nvfp4_accum_fp32_out_bf16_tnt",
-               &gemm_fp4fp4_accum_fp32_out_bf16<
+               &gemm_fp4fp4_accum_fp32<
                    cutlass::nv_float4_t<cutlass::float_e2m1_t>,
                    Shape<_256, _256, _256>,
                    Shape<_4, _1, _1>,
                    cutlass::gemm::KernelTmaWarpSpecialized2SmNvf4Sm100>);
 
         m.impl("gemm_nvfp4nvfp4_accum_fp32_out_fp16_tnt",
-               &gemm_fp4fp4_accum_fp32_out_bf16<
+               &gemm_fp4fp4_accum_fp32<
                    cutlass::nv_float4_t<cutlass::float_e2m1_t>,
                    Shape<_256, _256, _256>,
                    Shape<_4, _1, _1>,
