@@ -151,7 +151,7 @@ class MatmulBackend(str, Enum):
                     a_sf,
                     (a_e2m1.shape[0], a_e2m1.shape[1] // fp4_format.block_size() * 2),
                 ),
-                a_normconst,
+                dtype=torch.float32,
                 fp4_format=fp4_format,
             )
             b = dequantize_from_fp4(
@@ -160,7 +160,7 @@ class MatmulBackend(str, Enum):
                     b_sf,
                     (b_e2m1.shape[0], b_e2m1.shape[1] // fp4_format.block_size() * 2),
                 ),
-                b_normconst,
+                dtype=torch.float32,
                 fp4_format=fp4_format,
             )
 
@@ -170,7 +170,7 @@ class MatmulBackend(str, Enum):
             elif b.shape[1] > a.shape[1]:
                 a = F.pad(a, (0, b.shape[1] - a.shape[1]))
 
-            out = a @ b.T
+            out = ((a @ b.T).float() * a_normconst * b_normconst).to(out_dtype.torch())
 
             return out[: out_shape[0], : out_shape[1]] if out_shape is not None else out
 
