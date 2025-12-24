@@ -160,13 +160,13 @@ def get_image(  # noqa: C901, PLR0912
             )
 
         if dependency == Dependency.fast_hadamard_transform:
-            img = img.run_commands(
-                "git clone https://github.com/Dao-AILab/fast-hadamard-transform.git "
+            img = img.add_local_dir(
+                "third_party/fast-hadamard-transform",
                 f"{FOUROVERSIX_INSTALL_PATH}/third_party/fast-hadamard-transform",
-                (
-                    f"pip install {FOUROVERSIX_INSTALL_PATH}/third_party"
-                    "/fast-hadamard-transform"
-                ),
+                copy=True,
+            ).run_commands(
+                f"pip install {FOUROVERSIX_INSTALL_PATH}/third_party"
+                "/fast-hadamard-transform",
             )
 
         if dependency == Dependency.flash_attention:
@@ -179,10 +179,11 @@ def get_image(  # noqa: C901, PLR0912
 
         if dependency == Dependency.fouroversix:
             img = (
-                img.env({"CUDA_ARCHS": "100"})
-                .run_commands(
-                    "git clone https://github.com/NVIDIA/cutlass.git "
+                img.env({"CUDA_ARCHS": "100", "FORCE_BUILD": "1", "MAX_JOBS": "32"})
+                .add_local_dir(
+                    "third_party/cutlass",
                     f"{FOUROVERSIX_INSTALL_PATH}/third_party/cutlass",
+                    copy=True,
                 )
                 .add_local_file(
                     "pyproject.toml",
@@ -214,7 +215,6 @@ def get_image(  # noqa: C901, PLR0912
                         copy=True,
                     )
                     .workdir(FOUROVERSIX_INSTALL_PATH)
-                    .env({"MAX_JOBS": "32"})
                 )
 
             img = img.add_local_dir(
@@ -231,11 +231,7 @@ def get_image(  # noqa: C901, PLR0912
                     volumes={FOUROVERSIX_CACHE_PATH.as_posix(): cache_volume},
                 ).workdir("/root")
             else:
-                img = img.run_function(
-                    install_fouroversix,
-                    cpu=8,
-                    memory=32 * 1024,
-                )
+                img = img.run_function(install_fouroversix, cpu=32, memory=64 * 1024)
 
         if dependency == Dependency.fp_quant:
             img = img.add_local_dir(
@@ -250,11 +246,17 @@ def get_image(  # noqa: C901, PLR0912
         if dependency == Dependency.qutlass:
             img = (
                 img.apt_install("cmake")
-                .run_commands(
-                    "git clone https://github.com/IST-DASlab/qutlass.git "
+                .add_local_dir(
+                    "third_party/qutlass",
                     f"{FOUROVERSIX_INSTALL_PATH}/third_party/qutlass",
+                    copy=True,
                 )
-                .run_function(install_qutlass, gpu="B200", cpu=8, memory=32 * 1024)
+                .run_commands(
+                    # Prevent qutlass from trying to clone cutlass during build process
+                    f"rm -rf {FOUROVERSIX_INSTALL_PATH}/third_party/qutlass/.git",
+                )
+                .env({"MAX_JOBS": "32"})
+                .run_function(install_qutlass, gpu="B200", cpu=32, memory=64 * 1024)
             )
 
     if extra_pip_dependencies is not None:
