@@ -367,6 +367,11 @@ def dequantize_from_fp4(
             dtype,
         )
 
+    scales = from_blocked(
+        scales,
+        (x.shape[0], x.shape[1] // fp4_format.block_size() * 2),
+    )
+
     result = values * scales.to(
         dtype,
     ).repeat_interleave(fp4_format.block_size(), -1)
@@ -415,8 +420,6 @@ def fake_quantize_to_fp4(
         values_simulation_threshold=values_simulation_threshold,
         return_block_selections=return_block_selections,
     )
-
-    out_sf = from_blocked(out_sf, (x.shape[0], x.shape[1] // fp4_format.block_size()))
 
     result = dequantize_from_fp4(
         out_e2m1,

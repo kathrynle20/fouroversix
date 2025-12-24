@@ -143,23 +143,17 @@ class MatmulBackend(str, Enum):
             return out[: out_shape[0], : out_shape[1]] if out_shape is not None else out
 
         if self == MatmulBackend.pytorch:
-            from .quantize.reference import dequantize_from_fp4, from_blocked
+            from .quantize.reference import dequantize_from_fp4
 
             a = dequantize_from_fp4(
                 a_e2m1,
-                from_blocked(
-                    a_sf,
-                    (a_e2m1.shape[0], a_e2m1.shape[1] // fp4_format.block_size() * 2),
-                ),
+                a_sf,
                 dtype=torch.float32,
                 fp4_format=fp4_format,
             )
             b = dequantize_from_fp4(
                 b_e2m1,
-                from_blocked(
-                    b_sf,
-                    (b_e2m1.shape[0], b_e2m1.shape[1] // fp4_format.block_size() * 2),
-                ),
+                b_sf,
                 dtype=torch.float32,
                 fp4_format=fp4_format,
             )
