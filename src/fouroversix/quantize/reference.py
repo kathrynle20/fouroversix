@@ -123,6 +123,7 @@ def quantize_bf16_to_scaled_fp4(
     return_block_selections: bool = False,
     scale_factors_simulation_mode: ScaleFactorsSimulationMode = None,
     scale_rule: AdaptiveBlockScalingRule = AdaptiveBlockScalingRule.mse,
+    block_scale_2d: bool = False,
     stochastic_rounding: bool = True,
     # TODO(jack): Reimplement simulations
     values_simulation_mode: ValueSimulationMode = None,  # noqa: ARG001
@@ -131,7 +132,18 @@ def quantize_bf16_to_scaled_fp4(
     tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]
     | tuple[torch.Tensor, torch.Tensor, torch.Tensor | None, torch.Tensor]
 ):
-    x_scale_blocks = x.reshape(-1, block_size).float()
+    if block_scale_2d:
+        assert x.ndim == 2  # noqa: PLR2004
+        assert x.shape[1] % block_size == 0
+
+        x_scale_blocks = (
+            x.reshape(-1, block_size, x.shape[1] // block_size, block_size)
+            .permute(0, 2, 1, 3)
+            .reshape(-1, block_size**2)
+            .float()
+        )
+    else:
+        x_scale_blocks = x.reshape(-1, block_size).float()
 
     # Compute values and scale factors when blocks are scaled to 6
     if scale_rule != AdaptiveBlockScalingRule.always_4:
@@ -200,6 +212,18 @@ def quantize_bf16_to_scaled_fp4(
     elif scale_rule == AdaptiveBlockScalingRule.always_6:
         x_quantized = x_quantized_6
         scales = x_scales_6
+
+        if block_scale_2d:
+            x_quantized = (
+                x_quantized.reshape(
+                    -1,
+                    x.shape[1] // block_size,
+                    block_size,
+                    block_size,
+                )
+                .permute(0, 2, 1, 3)
+                .reshape_as(x_quantized)
+            )
     else:
         select_4 = (x_error_4 < x_error_6)[:, None]
         x_quantized = torch.where(
@@ -211,6 +235,18 @@ def quantize_bf16_to_scaled_fp4(
             select_4,
             x_scales_4.reshape(-1, 1),
             x_scales_6.reshape(-1, 1),
+        )
+
+    if block_scale_2d:
+        scales = (
+            scales.reshape(1, x.shape[0] // block_size, x.shape[1] // block_size)
+            .broadcast_to(
+                block_size,
+                x.shape[0] // block_size,
+                x.shape[1] // block_size,
+            )
+            .reshape(block_size, x.shape[0] // block_size, x.shape[1] // block_size)
+            .permute(1, 0, 2)
         )
 
     x_quantized = pack_unpacked_fp4(
@@ -239,7 +275,7 @@ def quantize_to_fp4(
     norm_constant: torch.Tensor | None = None,
     had: torch.Tensor | None = None,
     *,
-    block_scale_2d: bool = False,  # noqa: ARG001
+    block_scale_2d: bool = False,
     fp4_format: FP4Format = FP4Format.nvfp4,
     return_block_selections: bool = False,
     round_style: RoundStyle = RoundStyle.nearest,
@@ -270,6 +306,7 @@ def quantize_to_fp4(
         fp4_format.block_size(),
         fp4_format.scale_dtype(),
         stochastic_rounding=round_style == RoundStyle.stochastic,
+        block_scale_2d=block_scale_2d,
         norm_constant=norm_constant,
         scale_factors_simulation_mode=scale_factors_simulation_mode,
         scale_rule=scale_rule,
