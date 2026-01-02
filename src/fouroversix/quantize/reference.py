@@ -114,7 +114,7 @@ def get_nvfp4_tensor_scale(
     return (x.abs().max().float() / scale).clamp(min=MIN_ALLOWED_NORM_CONSTANT)
 
 
-def quantize_bf16_to_scaled_fp4(
+def quantize_bf16_to_scaled_fp4(  # noqa: C901, PLR0912
     x: torch.Tensor,
     block_size: int,
     scale_dtype: torch.dtype,
