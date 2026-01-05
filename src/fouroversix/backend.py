@@ -60,30 +60,8 @@ class MatmulBackend(str, Enum):
         out_shape: tuple[int, int] | None = None,
     ) -> torch.Tensor:
         """
-        Perform a matrix multiplication with two FP4-quantized tensors.
-
-        Args:
-            a_e2m1 (torch.Tensor): The values of the first input tensor in packed E2M1
-                format (2 values per byte).
-            a_sf (torch.Tensor): The scale factors of the first input tensor.
-            a_normconst (torch.Tensor): The per-tensor normalization constant of the
-                first input tensor.
-            b_e2m1 (torch.Tensor): The values of the second input tensor in packed E2M1
-                format (2 values per byte).
-            b_sf (torch.Tensor): The scale factors of the second input tensor.
-            b_normconst (torch.Tensor): The per-tensor normalization constant of the
-                second input tensor.
-            fp4_format (FP4Format): The FP4 format of the input tensors, either
-                `FP4Format.nvfp4` or `FP4Format.mxfp4`.
-            out_dtype (DataType): The data type of the output tensor, either
-                `DataType.bfloat16` or `DataType.float16`.
-            out_shape (tuple[int, int] | None): The shape of the output tensor. This is
-                helpful when the input tensors have shapes that are not multiples of 64,
-                but which were padded to multiples of 64 during quantization.
-
-        Returns:
-            The output tensor.
-
+        Perform a matrix multiplication with two FP4-quantized tensors. See frontend.py
+        for more details.
         """
 
         if self == MatmulBackend.cutlass:
@@ -285,7 +263,7 @@ class QuantizeBackend(str, Enum):
         transpose: bool = False,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
-        """Quantize a tensor to FP4. See `quantize_to_fp4` for more details."""
+        """Quantize a tensor to FP4. See frontend.py for more details."""
 
         if self == QuantizeBackend.cuda:
             from .ops import quantize_to_fp4
