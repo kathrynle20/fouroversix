@@ -33,6 +33,8 @@ def build_forward(
         input: tuple[torch.Tensor, ...],  # noqa: A002
     ) -> torch.Tensor:
         if not hasattr(self, "weight_e2m1"):
+            # Store original output features before quantization (padding may change shape)
+            self._original_out_features = self.weight.shape[0]
             self.weight_e2m1, self.weight_sf, self.weight_normconst = quantize_to_fp4(
                 self.weight,
                 scale_rule=w_scale_rule,
@@ -43,7 +45,8 @@ def build_forward(
             del self.weight
 
         out_n = (
-            self.weight_e2m1.shape[0]
+            # self.weight_e2m1.shape[0]
+            self._original_out_features
             if hasattr(self, "weight_e2m1") and self.weight_e2m1 is not None
             else self.weight.shape[0]
         )
@@ -51,7 +54,7 @@ def build_forward(
         out = torch.empty(
             *input.shape[:-1],
             out_n,
-            device=device,
+            device=input.device,  # Use input's device to avoid mismatch
             dtype=dtype.torch(),
         )
 
@@ -77,6 +80,10 @@ def build_forward(
             )
 
         if hasattr(self, "bias") and self.bias is not None:
+            if out.shape[-1] > self.bias.shape[0]:
+                self.bias = nn.functional.pad(self.bias, (0, self.bias.shape[0] - out.shape[-1]))
+            if out.shape[-1] < self.bias.shape[0]:
+                out = nn.functional.pad(out, (0, out.shape[-1] - self.bias.shape[0]))
             out = out + self.bias
 
         return out

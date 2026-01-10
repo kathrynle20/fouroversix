@@ -38,5 +38,6 @@ class HighPrecisionEvaluator(PTQEvaluator):
         return AutoModelForCausalLM.from_pretrained(
             model_name,
             device_map=device,
+            # device_map="auto",
             dtype=dtype,
         )

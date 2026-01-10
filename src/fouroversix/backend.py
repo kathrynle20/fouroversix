@@ -296,16 +296,17 @@ class QuantizeBackend(str, Enum):
             from .quantize.reference import quantize_to_fp4
 
             rows_div = 128
-            cols_div = 64
+            # cols_div = 64
+            cols_div = 128
 
             if x.shape[0] % rows_div != 0 or x.shape[1] % cols_div != 0:
                 x = F.pad(
                     x,
                     (
                         0,
-                        cols_div - (x.shape[1] % cols_div),
+                        (cols_div - (x.shape[1] % cols_div)) % cols_div,
                         0,
-                        rows_div - (x.shape[0] % rows_div),
+                        (rows_div - (x.shape[0] % rows_div)) % rows_div,
                     ),
                 )
 

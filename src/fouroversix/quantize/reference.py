@@ -335,30 +335,31 @@ def convert_e2m1_to_fp8_e4m3(x: torch.Tensor) -> torch.Tensor:
 def convert_e2m1_to_fp8_e8m0(x: torch.Tensor) -> torch.Tensor:
     e = (x >> 1) & 0x3
     m = x & 0x1
+    device = x.device  # Get device from input tensor
 
     # There might be a better way to do this but I'm feeling lazy right now
     return torch.where(
         (e == 3) & (m == 1),  # noqa: PLR2004
-        torch.tensor(130, dtype=torch.uint8),
+        torch.tensor(130, dtype=torch.uint8, device=device),
         torch.where(
             e == 3,  # noqa: PLR2004
-            torch.tensor(129, dtype=torch.uint8),
+            torch.tensor(129, dtype=torch.uint8, device=device),
             torch.where(
                 (e == 2) & (m == 1),  # noqa: PLR2004
-                torch.tensor(129, dtype=torch.uint8),
+                torch.tensor(129, dtype=torch.uint8, device=device),
                 torch.where(
                     e == 2,  # noqa: PLR2004
-                    torch.tensor(128, dtype=torch.uint8),
+                    torch.tensor(128, dtype=torch.uint8, device=device),
                     torch.where(
                         (e == 1) & (m == 1),
-                        torch.tensor(128, dtype=torch.uint8),
+                        torch.tensor(128, dtype=torch.uint8, device=device),
                         torch.where(
                             e == 1,
-                            torch.tensor(127, dtype=torch.uint8),
+                            torch.tensor(127, dtype=torch.uint8, device=device),
                             torch.where(
                                 (e == 0) & (m == 1),
-                                torch.tensor(126, dtype=torch.uint8),
-                                torch.tensor(0, dtype=torch.uint8),
+                                torch.tensor(126, dtype=torch.uint8, device=device),
+                                torch.tensor(0, dtype=torch.uint8, device=device),
                             ),
                         ),
                     ),
@@ -419,8 +420,8 @@ def dequantize_from_fp4(
         values = torch.stack([low, high], dim=-1).reshape(x.shape[0], x.shape[1] * 2)
         x_sign = torch.where(
             ((values >> 3) & 0x1) == 0,
-            torch.tensor(1, dtype=dtype),
-            torch.tensor(-1, dtype=dtype),
+            torch.tensor(1, dtype=dtype, device=x.device),
+            torch.tensor(-1, dtype=dtype, device=x.device),
         )
         result = result * x_sign
     elif fp4_format == FP4Format.nvfp4:
