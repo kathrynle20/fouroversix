@@ -104,8 +104,9 @@ def requantize_experts(
     fp4_format: FP4Format = FP4Format.nvfp4,
 ) -> None:
     """Re-quantize dequantized MXFP4 weights to NVFP4 (fake quantize)."""
-    from fouroversix.quantize.reference import fake_quantize_to_fp4
-    from fouroversix.utils import FP4Format, AdaptiveBlockScalingRule
+    from fouroversix.quantize.reference import (
+        quantize_to_fp4 as quantize_to_fp4_ref,
+    )
 
     if weight_names is None:
         weight_names = ["gate_up_proj", "down_proj"]
@@ -125,9 +126,10 @@ def requantize_experts(
                     #     fp4_format=fp4_format,  # Re-quantize to NVFP4
                     #     scale_rule=scale_rule,
                     # )
-                    out_e2m1, out_sf, out_normconst, *out_extras = quantize_to_fp4(
-                        self.weight,
+                    out_e2m1, out_sf, out_normconst, *out_extras = quantize_to_fp4_ref(
+                        weight,
                         fp4_format=fp4_format,
+                        scale_rule=scale_rule,
                     )
                     # Replace original weight with quantized version
                     if isinstance(weight, nn.Parameter):

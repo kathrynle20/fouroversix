@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 rtn_img = get_image()
 
 with rtn_img.imports():
-    from fouroversix import QuantizeBackend, apply_ptq
+    from fouroversix import FP4Format, QuantizeBackend, apply_ptq
     from transformers import AutoModelForCausalLM, Mxfp4Config
 
 
@@ -38,8 +38,8 @@ class RTNEvaluatorImpl(PTQEvaluator):
     ) -> AutoModelForCausalLM:
         """Quantize a model using round-to-nearest quantization."""
 
-        if model_name == "openai/gpt-oss-20b" and kwargs["fp4_format"] == "FP4Format.mxfp4":
-            print("dequantizing")
+        if model_name == "openai/gpt-oss-20b" and kwargs["fp4_format"] == FP4Format.nvfp4:
+            print("loading dequantized model")
             quantization_config = Mxfp4Config(dequantize=True)
             model = AutoModelForCausalLM.from_pretrained(
                 model_name,
