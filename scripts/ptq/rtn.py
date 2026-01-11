@@ -20,7 +20,7 @@ rtn_img = get_image()
 
 with rtn_img.imports():
     from fouroversix import QuantizeBackend, apply_ptq
-    from transformers import AutoModelForCausalLM
+    from transformers import AutoModelForCausalLM, Mxfp4Config
 
 
 class RTNEvaluatorImpl(PTQEvaluator):
@@ -38,14 +38,28 @@ class RTNEvaluatorImpl(PTQEvaluator):
     ) -> AutoModelForCausalLM:
         """Quantize a model using round-to-nearest quantization."""
 
-        model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            device_map=device,
-            dtype=dtype.torch(),
-            **(model_kwargs or {}),
-        )
+        if model_name == "openai/gpt-oss-20b" and kwargs["fp4_format"] == "FP4Format.mxfp4":
+            print("dequantizing")
+            quantization_config = Mxfp4Config(dequantize=True)
+            model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                device_map=device,
+                quantization_config=quantization_config,
+                dtype=dtype.torch(),
+                **(model_kwargs or {}),
+            )
+        else:
+            model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                device_map=device,
+                dtype=dtype.torch(),
+                **(model_kwargs or {}),
+            )
         apply_ptq(
             model,
+            # exclude_layers=["lm_head", "self_attn.q_proj", "self_attn.v_proj"],
+            exclude_layers=["lm_head"],
+            # allow_layers=["mlp.experts"],
             device=device,
             dtype=dtype,
             a_quantize_kwargs={"backend": quantize_backend},
