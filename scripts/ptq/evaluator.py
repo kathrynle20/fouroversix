@@ -42,6 +42,7 @@ class PTQEvaluatorImpl(ABC):
         *,
         device: str,
         dtype: str,
+        max_length: int,
         tasks: list[str],
         trust_remote_code: bool = False,
         **kwargs: dict[str, Any],
@@ -63,7 +64,11 @@ class PTQEvaluatorImpl(ABC):
             model = model_name
 
         return evaluator.simple_evaluate(
-            model=models.huggingface.HFLM(pretrained=model, device=device),
+            model=models.huggingface.HFLM(
+                pretrained=model,
+                device=device,
+                max_length=max_length,
+            ),
             tasks=tasks,
             device=device,
             task_manager=TaskManager(

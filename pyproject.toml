@@ -33,6 +33,7 @@ docs = [
 tests = [
     "lm_eval~=0.4.9.1,<0.4.9.2",
     "modal~=1.2.4",
+    "kernels~=0.11.7",
     "pytest~=9.0.2",
     "python-dateutil~=2.9.0.post0",
     "ruff~=0.14.9",
