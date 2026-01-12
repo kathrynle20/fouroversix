@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import configparser
 import os
 import shutil
 import subprocess
@@ -35,11 +36,99 @@ class Dependency(str, Enum):
     spinquant = "spinquant"
 
 
+class Submodule(str, Enum):
+    """Submodules of Four Over Six to add to the base image."""
+
+    cutlass = "cutlass"
+    fast_hadamard_transform = "fast_hadamard_transform"
+    fp_quant = "fp_quant"
+    llm_awq = "llm_awq"
+    qutlass = "qutlass"
+    spinquant = "spinquant"
+
+    def has_untracked_or_unstaged_changes(self) -> bool:
+        """Check if the submodule has untracked or unstaged changes."""
+
+        git_status = subprocess.run(  # noqa: S603
+            [  # noqa: S607
+                "git",
+                "-C",
+                self.get_local_path(),
+                "status",
+                "--porcelain",
+            ],
+            check=False,
+            stderr=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+
+        return bool(git_status.stdout.strip())
+
+    def get_install_path(self) -> str:
+        """Get the path where this submodule will be installed in the Modal image."""
+
+        path = f"{FOUROVERSIX_INSTALL_PATH}/{self.get_local_path()}"
+
+        if self == Submodule.fp_quant:
+            path += "/fpquant_cli"
+
+        return path
+
+    def get_local_path(self) -> str:
+        """Get the path of the submodule relative to the root directory."""
+        return f"third_party/{self.value.replace('_', '-')}"
+
+    def get_remote_url(self) -> str:
+        """Get the remote URL of the submodule."""
+
+        config = configparser.ConfigParser()
+
+        if Path(".gitmodules").exists():
+            # Runs locally
+            config.read(".gitmodules")
+        else:
+            # Runs on Modal container
+            config.read(f"{FOUROVERSIX_INSTALL_PATH}/.gitmodules")
+
+        for section in config.sections():
+            if config[section]["path"] == self.get_local_path():
+                url = config[section]["url"]
+                break
+
+        if url.startswith("https://"):
+            return url
+
+        # SCP-style: git@github.com:owner/repo.git
+        if "@" in url and ":" in url:
+            user_host, path = url.split(":", 1)
+            _, host = user_host.split("@", 1)
+            return f"https://{host}/{path}"
+
+        msg = f"Unsupported remote URL format: {url}"
+        raise ValueError(msg)
+
+
 cuda_version_to_image_tag = {
     "12.8": "nvcr.io/nvidia/cuda-dl-base:25.03-cuda12.8-devel-ubuntu24.04",
     "12.9": "nvcr.io/nvidia/cuda-dl-base:25.06-cuda12.9-devel-ubuntu24.04",
     "13.0": "nvcr.io/nvidia/cuda-dl-base:25.09-cuda13.0-devel-ubuntu24.04",
 }
+
+
+def add_submodule(img: modal.Image, submodule: Submodule) -> None:
+    if submodule.has_untracked_or_unstaged_changes():
+        # Submodule has uncommitted changes, build image with local copy
+        return img.add_local_dir(
+            submodule.get_local_path(),
+            submodule.get_install_path(),
+            copy=True,
+        )
+
+    # Submodule has no uncommitted changes, download from remote to save time
+    return img.run_commands(
+        f"git clone {submodule.get_remote_url()} {submodule.get_install_path()}",
+    )
 
 
 def build_fouroversix_ext() -> None:
@@ -98,7 +187,7 @@ def install_qutlass() -> None:
             "pip",
             "install",
             "--no-build-isolation",
-            f"{FOUROVERSIX_INSTALL_PATH}/third_party/qutlass",
+            Submodule.qutlass.get_install_path(),
         ],
         check=False,
     )
@@ -152,22 +241,13 @@ def get_image(  # noqa: C901, PLR0912
 
     for dependency in dependencies:
         if dependency == Dependency.awq:
-            img = img.add_local_dir(
-                "third_party/llm-awq",
-                f"{FOUROVERSIX_INSTALL_PATH}/third_party/llm-awq",
-                copy=True,
-            ).run_commands(
-                f"pip install --no-deps {FOUROVERSIX_INSTALL_PATH}/third_party/llm-awq",
+            img = add_submodule(img, Submodule.llm_awq).run_commands(
+                f"pip install --no-deps {Submodule.llm_awq.get_install_path()}",
             )
 
         if dependency == Dependency.fast_hadamard_transform:
-            img = img.add_local_dir(
-                "third_party/fast-hadamard-transform",
-                f"{FOUROVERSIX_INSTALL_PATH}/third_party/fast-hadamard-transform",
-                copy=True,
-            ).run_commands(
-                f"pip install {FOUROVERSIX_INSTALL_PATH}/third_party"
-                "/fast-hadamard-transform",
+            img = add_submodule(img, Submodule.fast_hadamard_transform).run_commands(
+                f"pip install {Submodule.fast_hadamard_transform.get_install_path()}",
             )
 
         if dependency == Dependency.flash_attention:
@@ -180,11 +260,11 @@ def get_image(  # noqa: C901, PLR0912
 
         if dependency == Dependency.fouroversix:
             img = (
-                img.env({"CUDA_ARCHS": "100", "FORCE_BUILD": "1", "MAX_JOBS": "32"})
-                .add_local_dir(
-                    "third_party/cutlass",
-                    f"{FOUROVERSIX_INSTALL_PATH}/third_party/cutlass",
-                    copy=True,
+                add_submodule(
+                    img.env(
+                        {"CUDA_ARCHS": "100", "FORCE_BUILD": "1", "MAX_JOBS": "32"},
+                    ),
+                    Submodule.cutlass,
                 )
                 .add_local_file(
                     "pyproject.toml",
@@ -235,37 +315,19 @@ def get_image(  # noqa: C901, PLR0912
                 img = img.run_function(install_fouroversix, cpu=32, memory=64 * 1024)
 
         if dependency == Dependency.fp_quant:
-            img = img.add_local_dir(
-                "third_party/fp-quant",
-                f"{FOUROVERSIX_INSTALL_PATH}/fpquant/fpquant_cli",
-                copy=True,
-            ).run_commands(
-                f"pip install {FOUROVERSIX_INSTALL_PATH}/fpquant/fpquant_cli/"
-                "inference_lib",
+            img = add_submodule(img, Submodule.fp_quant).run_commands(
+                f"pip install {Submodule.fp_quant.get_install_path()}/inference_lib",
             )
 
         if dependency == Dependency.qutlass:
             img = (
-                img.apt_install("cmake")
-                .add_local_dir(
-                    "third_party/qutlass",
-                    f"{FOUROVERSIX_INSTALL_PATH}/third_party/qutlass",
-                    copy=True,
-                )
-                .run_commands(
-                    # Prevent qutlass from trying to clone cutlass during build process
-                    f"rm -rf {FOUROVERSIX_INSTALL_PATH}/third_party/qutlass/.git",
-                )
+                add_submodule(img.apt_install("cmake"), Submodule.qutlass)
                 .env({"MAX_JOBS": "32"})
                 .run_function(install_qutlass, gpu="B200", cpu=32, memory=64 * 1024)
             )
 
         if dependency == Dependency.spinquant:
-            img = img.add_local_dir(
-                "third_party/spinquant",
-                f"{FOUROVERSIX_INSTALL_PATH}/spinquant",
-                copy=True,
-            )
+            img = add_submodule(img, Submodule.spinquant)
 
     if extra_pip_dependencies is not None:
         img = img.uv_pip_install(*extra_pip_dependencies)
@@ -282,6 +344,10 @@ def get_image(  # noqa: C901, PLR0912
             img = img.add_local_dir(
                 "src",
                 f"{FOUROVERSIX_INSTALL_PATH}/src",
+                copy=deploy or KERNEL_DEV_MODE,
+            ).add_local_file(
+                ".gitmodules",
+                f"{FOUROVERSIX_INSTALL_PATH}/.gitmodules",
                 copy=deploy or KERNEL_DEV_MODE,
             )
 

@@ -30,6 +30,10 @@ def run_ptq(
                 model_name=model_name,
                 **kwargs,
             )
+
+            if modal_gpu := kwargs.pop("modal_gpu"):
+                evaluator_cls = evaluator_cls.with_options(gpu=modal_gpu)
+
             function_calls.append(
                 evaluator_cls().evaluate.spawn(
                     model_name=model_name,
@@ -59,10 +63,12 @@ def run_ptq(
 )
 @click.option("--detach", is_flag=True)
 @click.option("--device", type=str, default="cuda")
-@click.option("--dtype", type=DataType, default=DataType.bfloat16)
+@click.option("--dtype", type=DataType, default=DataType.auto)
 @click.option("--fp4-format", type=FP4Format, default=FP4Format.nvfp4)
 @click.option("--matmul-backend", type=MatmulBackend, default=None)
+@click.option("--max-length", type=int, default=None)
 @click.option("--modal", is_flag=True)
+@click.option("--modal-gpu", type=str)
 @click.option("--model-name", "-m", type=str, multiple=True, required=True)
 @click.option("--ptq-method", "-p", type=PTQMethod, multiple=True, required=True)
 @click.option("--quantize-backend", type=QuantizeBackend, default=None)

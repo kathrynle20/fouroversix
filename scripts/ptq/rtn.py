@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 rtn_img = get_image()
 
 with rtn_img.imports():
-    from fouroversix import QuantizeBackend, apply_ptq
+    from fouroversix import QuantizeBackend, quantize_model
     from transformers import AutoModelForCausalLM
 
 
@@ -44,10 +44,8 @@ class RTNEvaluatorImpl(PTQEvaluator):
             dtype=dtype.torch(),
             **(model_kwargs or {}),
         )
-        apply_ptq(
+        quantize_model(
             model,
-            device=device,
-            dtype=dtype,
             a_quantize_kwargs={"backend": quantize_backend},
             w_quantize_kwargs={"backend": quantize_backend},
             **kwargs,

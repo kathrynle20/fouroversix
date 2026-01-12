@@ -62,25 +62,25 @@ def fp32_to_scaled_fp4_kernel(
         )
     elif FP4_FORMAT == "nvfp4":
         norm_constant = tl.load(norm_constant_ptr)
-
-        if BLOCK_SCALE_2D:
-            x_scale_blocks = (
-                x_block.reshape(8, 16, 4, 16).permute(0, 2, 1, 3).reshape(8, 4, 256)
-            )
-        else:
-            x_scale_blocks = x_block.reshape(128, 4, 16)
+        x_scale_blocks = x_block.reshape(128, 4, 16)
 
         # Calculate six blocks
         x_scales_hp = tl.max(x_scale_blocks.abs(), axis=-1) / (
             (E2M1_MAX_VALUE if SCALE_RULE == "always_6" else 4) * norm_constant
         )
+
+        if BLOCK_SCALE_2D:
+            x_scales_hp = tl.max(
+                x_scales_hp.reshape(8, 16, 4).permute(0, 2, 1),
+                axis=-1,
+            )
+
         x_scales_hp = tl.clamp(x_scales_hp, E4M3_MIN_POSITIVE_NORMAL, E4M3_MAX_VALUE)
         x_scales = x_scales_hp.to(tl.float8e4nv)
 
         if BLOCK_SCALE_2D:
-            x_scale_blocks = x_block.reshape(128, 4, 16)
             x_scales = (
-                x_scales[None, :, :]
+                x_scales.expand_dims(0)
                 .broadcast_to(16, 8, 4)
                 .permute(1, 0, 2)
                 .reshape(128, 4)
@@ -157,25 +157,25 @@ def fp32_to_scaled_fp4_kernel_fouroversix(
     SCALE_RULE: tl.constexpr,
 ) -> None:
     norm_constant = tl.load(norm_constant_ptr)
-
-    if BLOCK_SCALE_2D:
-        x_scale_blocks = (
-            x_block.reshape(8, 16, 4, 16).permute(0, 2, 1, 3).reshape(8, 4, 256)
-        )
-    else:
-        x_scale_blocks = x_block.reshape(128, 4, 16)
+    x_scale_blocks = x_block.reshape(128, 4, 16)
 
     # Calculate six blocks
     x_scales_hp_6 = tl.max(x_scale_blocks.abs(), axis=-1) / (
         E2M1_MAX_VALUE * norm_constant
     )
+
+    if BLOCK_SCALE_2D:
+        x_scales_hp_6 = tl.max(
+            x_scales_hp_6.reshape(8, 16, 4).permute(0, 2, 1),
+            axis=-1,
+        )
+
     x_scales_hp_6 = tl.clamp(x_scales_hp_6, E4M3_MIN_POSITIVE_NORMAL, E4M3_MAX_VALUE)
     x_scales_6 = x_scales_hp_6.to(tl.float8e4nv)
 
     if BLOCK_SCALE_2D:
-        x_scale_blocks = x_block.reshape(128, 4, 16)
         x_scales_6 = (
-            x_scales_6[None, :, :]
+            x_scales_6.expand_dims(0)
             .broadcast_to(16, 8, 4)
             .permute(1, 0, 2)
             .reshape(128, 4)
@@ -188,20 +188,21 @@ def fp32_to_scaled_fp4_kernel_fouroversix(
         .split()
     )
 
-    if BLOCK_SCALE_2D:
-        x_scale_blocks = (
-            x_block.reshape(8, 16, 4, 16).permute(0, 2, 1, 3).reshape(8, 4, 256)
-        )
-
     # Calculate four blocks
     x_scales_hp_4 = tl.max(x_scale_blocks.abs(), axis=-1) / (4 * norm_constant)
+
+    if BLOCK_SCALE_2D:
+        x_scales_hp_4 = tl.max(
+            x_scales_hp_4.reshape(8, 16, 4).permute(0, 2, 1),
+            axis=-1,
+        )
+
     x_scales_hp_4 = tl.clamp(x_scales_hp_4, E4M3_MIN_POSITIVE_NORMAL, E4M3_MAX_VALUE)
     x_scales_4 = x_scales_hp_4.to(tl.float8e4nv)
 
     if BLOCK_SCALE_2D:
-        x_scale_blocks = x_block.reshape(128, 4, 16)
         x_scales_4 = (
-            x_scales_4[None, :, :]
+            x_scales_4.expand_dims(0)
             .broadcast_to(16, 8, 4)
             .permute(1, 0, 2)
             .reshape(128, 4)
@@ -760,8 +761,6 @@ def quantize_to_fp4(  # noqa: C901, PLR0912
             ROUND_STYLE=round_style,
             BLOCK_SCALE_2D=block_scale_2d,
             SCALE_RULE=scale_rule.value,
-            num_warps=1,
-            num_stages=3,
         )
     else:
         had_block_size = had.shape[0]
@@ -829,8 +828,6 @@ def quantize_to_fp4(  # noqa: C901, PLR0912
             ROUND_STYLE=round_style,
             BLOCK_SCALE_2D=block_scale_2d,
             SCALE_RULE=scale_rule.value,
-            num_warps=4,
-            num_stages=3 if fp4_format == "nvfp4" else 1,
         )
 
     if fp4_format == "mxfp4":

@@ -38,6 +38,7 @@ class AdaptiveBlockScalingRule(str, Enum):
 class DataType(str, Enum):
     """High-precision data types."""
 
+    auto = "auto"
     bfloat16 = "bfloat16"
     float16 = "float16"
     float32 = "float32"
@@ -45,6 +46,8 @@ class DataType(str, Enum):
     def torch(self) -> torch.dtype:
         """Return the corresponding torch.dtype."""
 
+        if self == DataType.auto:
+            return "auto"
         if self == DataType.bfloat16:
             return torch.bfloat16
         if self == DataType.float16:

@@ -55,6 +55,7 @@ class PTQEvaluatorImpl(ABC):
         *,
         device: str,
         dtype: str,
+        max_length: int,
         tasks: list[str],
         trust_remote_code: bool = False,
         **kwargs: dict[str, Any],
@@ -63,6 +64,8 @@ class PTQEvaluatorImpl(ABC):
 
         from lm_eval import evaluator, models
         from lm_eval.tasks import TaskManager
+
+        print(f"Tasks: {tasks}")
 
         if isinstance(model_name, str):
             model = self.quantize_model(
@@ -92,10 +95,14 @@ class PTQEvaluatorImpl(ABC):
         print_gpu_memory("Before evaluate", device)
 
         return evaluator.simple_evaluate(
-            model=lm,
+            model=models.huggingface.HFLM(
+                pretrained=model,
+                device=device,
+                max_length=max_length,
+            ),
             tasks=tasks,
             device=device,
-            batch_size=1,
+            # batch_size=1,
             task_manager=TaskManager(
                 include_path=(Path(__file__).parent / "tasks").as_posix(),
             ),

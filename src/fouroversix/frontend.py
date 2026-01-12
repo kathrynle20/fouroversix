@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
+
+import torch
 
 from .backend import MatmulBackend, QuantizeBackend
-from .utils import AdaptiveBlockScalingRule, DataType, FP4Format, RoundStyle
-
-if TYPE_CHECKING:
-    import torch
+from .utils import AdaptiveBlockScalingRule, FP4Format, RoundStyle
 
 
 def fp4_matmul(
@@ -23,7 +22,7 @@ def fp4_matmul(
     a_quantize_kwargs: dict[str, Any] | None = None,
     b_quantize_kwargs: dict[str, Any] | None = None,
     fp4_format: FP4Format = FP4Format.nvfp4,
-    out_dtype: DataType = DataType.bfloat16,
+    out_dtype: torch.dtype = torch.bfloat16,
     out_shape: tuple[int, int] | None = None,
 ) -> torch.Tensor:
     """
