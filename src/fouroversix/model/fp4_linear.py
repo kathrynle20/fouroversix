@@ -203,9 +203,7 @@ class TrainableFP4Linear(FP4Linear):
 
         self.had_gen = torch.Generator(device=device)
         self.had_gen.manual_seed(41)
-        self.had = torch.FloatTensor(hadamard(HBS)).to(dtype=dtype, device=device) / (
-            HBS**0.5
-        )
+        self.had = torch.tensor(hadamard(HBS) / (HBS**0.5), dtype=dtype, device=device)
         self.had = (
             self.had.T
             * (

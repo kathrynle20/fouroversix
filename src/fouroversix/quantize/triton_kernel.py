@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import itertools
 import os
-from typing import TYPE_CHECKING
 
 import torch
 import triton
@@ -13,11 +12,8 @@ from fouroversix.quantize.reference import (
     E4M3_MIN_POSITIVE_NORMAL,
     get_nvfp4_tensor_scale,
 )
-from fouroversix.utils import AdaptiveBlockScalingRule
+from fouroversix.utils import AdaptiveBlockScalingRule, FP4Format, RoundStyle
 from triton.tools.tensor_descriptor import TensorDescriptor
-
-if TYPE_CHECKING:
-    from fouroversix.utils import FP4Format, RoundStyle
 
 E2M1_MAX_VALUE = tl.constexpr(E2M1_MAX_VALUE)
 E4M3_MAX_VALUE = tl.constexpr(E4M3_MAX_VALUE)
@@ -25,11 +21,56 @@ E4M3_MIN_POSITIVE_NORMAL = tl.constexpr(E4M3_MIN_POSITIVE_NORMAL)
 FOUROVERSIX_AUTOTUNE = os.getenv("FOUROVERSIX_AUTOTUNE", "0") == "1"
 SCALE_MEGABLOCK_SIZE = tl.constexpr(512)
 
+FP4_FORMAT_MXFP4 = tl.constexpr(FP4Format.mxfp4.value)
+FP4_FORMAT_NVFP4 = tl.constexpr(FP4Format.nvfp4.value)
+
+ROUND_STYLE_NEAREST = tl.constexpr(RoundStyle.nearest.value)
+ROUND_STYLE_STOCHASTIC = tl.constexpr(RoundStyle.stochastic.value)
+
 SCALE_RULE_ABS_MAX = tl.constexpr(AdaptiveBlockScalingRule.abs_max.value)
 SCALE_RULE_ALWAYS_4 = tl.constexpr(AdaptiveBlockScalingRule.always_4.value)
 SCALE_RULE_ALWAYS_6 = tl.constexpr(AdaptiveBlockScalingRule.always_6.value)
 SCALE_RULE_L1_NORM = tl.constexpr(AdaptiveBlockScalingRule.l1_norm.value)
 SCALE_RULE_MSE = tl.constexpr(AdaptiveBlockScalingRule.mse.value)
+
+
+@triton.jit
+def rht_kernel(
+    x_desc,
+    h_desc,
+    y_desc,
+    # Meta-parameters
+    # TODO(jack): Update RHT kernel to support unpadded dimensions
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_N: tl.constexpr,
+    GROUP_SIZE_M: tl.constexpr,
+    GROUP_SIZE_N: tl.constexpr,
+) -> None:
+    HAD_BLOCK_SIZE: tl.constexpr = h_desc.block_shape[0]
+
+    pid_m = tl.program_id(0)
+    pid_n = tl.program_id(1)
+
+    # Load H [B, B]
+    h_block = h_desc.load([0, 0])
+
+    for block_i in range(GROUP_SIZE_M * GROUP_SIZE_N):
+        m = block_i // GROUP_SIZE_N
+        n = block_i % GROUP_SIZE_N
+
+        m_block_offset = pid_m * BLOCK_SIZE_M * GROUP_SIZE_M + m * BLOCK_SIZE_M
+        n_block_offset = pid_n * BLOCK_SIZE_N * GROUP_SIZE_N + n * BLOCK_SIZE_N
+
+        x_block = x_desc.load([m_block_offset, n_block_offset])
+        y_block = tl.dot(
+            x_block.reshape(
+                BLOCK_SIZE_M * BLOCK_SIZE_N // HAD_BLOCK_SIZE,
+                HAD_BLOCK_SIZE,
+            ),
+            h_block,
+        ).reshape(BLOCK_SIZE_M, BLOCK_SIZE_N)
+
+        y_desc.store([m_block_offset, n_block_offset], y_block)
 
 
 @triton.jit
@@ -43,10 +84,10 @@ def fp32_to_scaled_fp4_kernel(
     BLOCK_SCALE_2D: tl.constexpr,
     SCALE_RULE: tl.constexpr,
 ) -> None:
-    if FP4_FORMAT == "mxfp4":
+    if FP4_FORMAT == FP4_FORMAT_MXFP4:
         x_scale_blocks = x_block.reshape(128, 4, 32)
         x_scales = tl.max(x_scale_blocks.abs(), axis=-1) / (
-            E2M1_MAX_VALUE if SCALE_RULE == "always_6" else 4
+            E2M1_MAX_VALUE if SCALE_RULE == SCALE_RULE_ALWAYS_6 else 4
         )
 
         # Use the 8-bit exponent as the scale factor, and then add one in order to
@@ -60,13 +101,13 @@ def fp32_to_scaled_fp4_kernel(
             x_block.dtype,
             bitcast=True,
         )
-    elif FP4_FORMAT == "nvfp4":
+    elif FP4_FORMAT == FP4_FORMAT_NVFP4:
         norm_constant = tl.load(norm_constant_ptr)
         x_scale_blocks = x_block.reshape(128, 4, 16)
 
         # Calculate six blocks
         x_scales_hp = tl.max(x_scale_blocks.abs(), axis=-1) / (
-            (E2M1_MAX_VALUE if SCALE_RULE == "always_6" else 4) * norm_constant
+            (E2M1_MAX_VALUE if SCALE_RULE == SCALE_RULE_ALWAYS_6 else 4) * norm_constant
         )
 
         if BLOCK_SCALE_2D:
@@ -93,12 +134,12 @@ def fp32_to_scaled_fp4_kernel(
 
     # Store into c_e2m1 [M, K // 2]
     (x_block_scaled_b1, x_block_scaled_b2) = (
-        (x_scale_blocks / tl.maximum(x_scales_hp[:, :, None], 1e-12))
+        (x_scale_blocks / x_scales_hp[:, :, None])
         .reshape(BLOCK_SIZE_M, BLOCK_SIZE_N // 2, 2)
         .split()
     )
 
-    if ROUND_STYLE == "nearest":
+    if ROUND_STYLE == ROUND_STYLE_NEAREST:
         x_e2m1 = tl.inline_asm_elementwise(
             asm="""
                 {
@@ -116,7 +157,7 @@ def fp32_to_scaled_fp4_kernel(
             is_pure=True,
             pack=4,
         )
-    elif ROUND_STYLE == "stochastic":
+    elif ROUND_STYLE == ROUND_STYLE_STOCHASTIC:
         rbits = tl.rand(
             0,
             tl.arange(0, BLOCK_SIZE_M)[:, None] * BLOCK_SIZE_N // 2
@@ -215,7 +256,7 @@ def fp32_to_scaled_fp4_kernel_fouroversix(
         .split()
     )
 
-    if ROUND_STYLE == "nearest":
+    if ROUND_STYLE == ROUND_STYLE_NEAREST:
         (x_e2m1_6, x_e2m1_4, x_fp16x2_6, x_fp16x2_4) = tl.inline_asm_elementwise(
             asm="""
                 {
@@ -273,7 +314,7 @@ def fp32_to_scaled_fp4_kernel_fouroversix(
             is_pure=True,
             pack=8,
         )
-    elif ROUND_STYLE == "stochastic":
+    elif ROUND_STYLE == ROUND_STYLE_STOCHASTIC:
         rbits = tl.rand(
             0,
             tl.arange(0, BLOCK_SIZE_M)[:, None] * BLOCK_SIZE_N // 2
@@ -410,6 +451,7 @@ def fp32_to_scaled_fp4_kernel_fouroversix(
         x_e2m1_4.reshape(128, 4, 8),
         x_e2m1_6.reshape(128, 4, 8),
     ).reshape(128, 32)
+
     x_scales = (
         tl.where(
             four_error < six_error,
@@ -483,7 +525,10 @@ def fp4_quantization_kernel(
                 other=0.0,
             ).T
 
-        if SCALE_RULE == "always_4" or SCALE_RULE == "always_6":  # noqa: PLR1714
+        if (
+            SCALE_RULE == SCALE_RULE_ALWAYS_4  # noqa: PLR1714
+            or SCALE_RULE == SCALE_RULE_ALWAYS_6
+        ):
             x_e2m1, x_scales = fp32_to_scaled_fp4_kernel(
                 x_block.to(tl.float32),
                 norm_constant_ptr,
@@ -494,7 +539,7 @@ def fp4_quantization_kernel(
                 BLOCK_SCALE_2D,
                 SCALE_RULE,
             )
-        elif FP4_FORMAT == "nvfp4":
+        elif FP4_FORMAT == FP4_FORMAT_NVFP4:
             x_e2m1, x_scales = fp32_to_scaled_fp4_kernel_fouroversix(
                 x_block.to(tl.float32),
                 norm_constant_ptr,
@@ -562,139 +607,13 @@ autotuned_fp4_quantization_kernel = triton.autotune(
 )(fp4_quantization_kernel)
 
 
-@triton.jit
-def fp4_quantization_with_rht_kernel(
-    x_desc,
-    norm_constant_ptr,
-    h_desc,
-    x_e2m1_desc,
-    x_sf_desc,
-    # Meta-parameters
-    # TODO(jack): Update RHT kernel to support unpadded dimensions
-    M: tl.constexpr,  # noqa: ARG001
-    N: tl.constexpr,  # noqa: ARG001
-    BLOCK_SIZE_M: tl.constexpr,
-    BLOCK_SIZE_N: tl.constexpr,
-    GROUP_SIZE_M: tl.constexpr,
-    GROUP_SIZE_N: tl.constexpr,
-    TRANSPOSE: tl.constexpr,
-    FP4_FORMAT: tl.constexpr,
-    ROUND_STYLE: tl.constexpr,
-    BLOCK_SCALE_2D: tl.constexpr,
-    SCALE_RULE: tl.constexpr,
-) -> None:
-    HAD_BLOCK_SIZE: tl.constexpr = h_desc.block_shape[0]
-
-    pid_m = tl.program_id(0)
-    pid_n = tl.program_id(1)
-
-    # Load H [B, B]
-    h_block = h_desc.load([0, 0])
-
-    for block_i in range(GROUP_SIZE_M * GROUP_SIZE_N):
-        m = block_i // GROUP_SIZE_N
-        n = block_i % GROUP_SIZE_N
-
-        m_block_offset = pid_m * BLOCK_SIZE_M * GROUP_SIZE_M + m * BLOCK_SIZE_M
-        n_block_offset = pid_n * BLOCK_SIZE_N * GROUP_SIZE_N + n * BLOCK_SIZE_N
-
-        # Load [B, B] block from A or A^T
-        if not TRANSPOSE:
-            x_block = x_desc.load([m_block_offset, n_block_offset])
-        else:
-            x_block = x_desc.load([n_block_offset, m_block_offset]).T
-
-        x_block = tl.dot(
-            x_block.reshape(
-                BLOCK_SIZE_M * BLOCK_SIZE_N // HAD_BLOCK_SIZE,
-                HAD_BLOCK_SIZE,
-            ),
-            h_block,
-        ).reshape(BLOCK_SIZE_M, BLOCK_SIZE_N)
-
-        if SCALE_RULE == "always_4" or SCALE_RULE == "always_6":  # noqa: PLR1714
-            x_e2m1, x_scales = fp32_to_scaled_fp4_kernel(
-                x_block.to(tl.float32),
-                norm_constant_ptr,
-                BLOCK_SIZE_M,
-                BLOCK_SIZE_N,
-                FP4_FORMAT,
-                ROUND_STYLE,
-                BLOCK_SCALE_2D,
-                SCALE_RULE,
-            )
-        elif FP4_FORMAT == "nvfp4":
-            x_e2m1, x_scales = fp32_to_scaled_fp4_kernel_fouroversix(
-                x_block.to(tl.float32),
-                norm_constant_ptr,
-                BLOCK_SIZE_M,
-                BLOCK_SIZE_N,
-                ROUND_STYLE,
-                BLOCK_SCALE_2D,
-                SCALE_RULE,
-            )
-
-        offs_m_e2m1 = pid_m * BLOCK_SIZE_M * GROUP_SIZE_M + m * BLOCK_SIZE_M
-        offs_n_e2m1 = pid_n * BLOCK_SIZE_N * GROUP_SIZE_N // 2 + n * BLOCK_SIZE_N // 2
-        x_e2m1_desc.store([offs_m_e2m1, offs_n_e2m1], x_e2m1)
-
-        scale_block_offset = (
-            (pid_m * GROUP_SIZE_M + m) * (tl.num_programs(1) * GROUP_SIZE_N)
-            + (pid_n * GROUP_SIZE_N + n)
-        ) * SCALE_MEGABLOCK_SIZE
-        x_sf_desc.store([scale_block_offset], x_scales)
-
-
-autotuned_fp4_quantization_with_rht_kernel = triton.autotune(
-    configs=[
-        triton.Config(
-            {"GROUP_SIZE_M": group_size_m, "GROUP_SIZE_N": group_size_n},
-            num_stages=None,
-            num_warps=None,
-        )
-        for group_size_m, group_size_n in itertools.product(
-            [1, 2, 4, 8, 16, 32, 64, 128, 256],
-            [1, 2, 4, 8, 16, 32, 64, 128, 256],
-        )
-    ],
-    key=[
-        "M",
-        "N",
-        "BLOCK_SIZE_M",
-        "BLOCK_SIZE_N",
-        "GROUP_SIZE_M",
-        "GROUP_SIZE_N",
-        "TRANSPOSE",
-        "FP4_FORMAT",
-        "ROUND_STYLE",
-        "BLOCK_SCALE_2D",
-        "scale_rule",
-    ],
-    prune_configs_by={
-        "early_config_prune": lambda configs, args, **kwargs: (  # noqa: ARG005
-            filter(
-                lambda config: (
-                    (kwargs["M"] // kwargs["BLOCK_SIZE_M"])
-                    % config.kwargs["GROUP_SIZE_M"]
-                    == 0
-                    and (kwargs["N"] // kwargs["BLOCK_SIZE_N"])
-                    % config.kwargs["GROUP_SIZE_N"]
-                    == 0
-                ),
-                configs,
-            )
-        ),
-    },
-)(fp4_quantization_with_rht_kernel)
-
-
-def quantize_to_fp4(  # noqa: C901, PLR0912
+def quantize_to_fp4(  # noqa: C901
     x: torch.Tensor,
     norm_constant: torch.Tensor | None = None,
     had: torch.Tensor | None = None,
     *,
-    fp4_format: FP4Format = "nvfp4",
-    round_style: RoundStyle = "nearest",
+    fp4_format: FP4Format = FP4Format.nvfp4,
+    round_style: RoundStyle = RoundStyle.nearest,
     scale_rule: AdaptiveBlockScalingRule = AdaptiveBlockScalingRule.mse,
     block_scale_2d: bool = False,
     transpose: bool = False,
@@ -704,7 +623,7 @@ def quantize_to_fp4(  # noqa: C901, PLR0912
     else:
         M, N = x.shape
 
-    if fp4_format == "mxfp4":
+    if fp4_format == FP4Format.mxfp4:
         block_size_m = 128
         block_size_n = 128
         scale_block_size = 32
@@ -712,7 +631,7 @@ def quantize_to_fp4(  # noqa: C901, PLR0912
 
         if norm_constant is None:
             norm_constant = torch.ones(1, device=x.device, dtype=torch.float32)
-    elif fp4_format == "nvfp4":
+    elif fp4_format == FP4Format.nvfp4:
         block_size_m = 128
         block_size_n = 64
         scale_block_size = 16
@@ -736,33 +655,7 @@ def quantize_to_fp4(  # noqa: C901, PLR0912
         padded_n // block_size_n // meta["GROUP_SIZE_N"],
     )
 
-    if had is None:
-        (
-            autotuned_fp4_quantization_kernel
-            if FOUROVERSIX_AUTOTUNE
-            else fp4_quantization_kernel
-        )[grid](
-            x,
-            norm_constant,
-            x_e2m1,
-            x_sf,
-            x.stride(0),
-            x.stride(1),
-            M=M,
-            N=N,
-            BLOCK_SIZE_M=block_size_m,
-            BLOCK_SIZE_N=block_size_n,
-            GROUP_SIZE_M=1,
-            GROUP_SIZE_N=max(
-                2**x for x in range(7) if (N // block_size_n) % (2**x) == 0
-            ),
-            TRANSPOSE=transpose,
-            FP4_FORMAT=fp4_format,
-            ROUND_STYLE=round_style,
-            BLOCK_SCALE_2D=block_scale_2d,
-            SCALE_RULE=scale_rule.value,
-        )
-    else:
+    if had is not None:
         had_block_size = had.shape[0]
 
         if M % had_block_size != 0:
@@ -784,53 +677,61 @@ def quantize_to_fp4(  # noqa: C901, PLR0912
             msg = "H must have dimensions that are a power of two"
             raise ValueError(msg)
 
+        y = torch.empty_like(x)
+
         x_desc = TensorDescriptor.from_tensor(
             x,
-            block_shape=(
-                [block_size_n, block_size_m]
-                if transpose
-                else [block_size_m, block_size_n]
-            ),
+            block_shape=[block_size_m, block_size_n],
         )
         h_desc = TensorDescriptor.from_tensor(
             had,
             block_shape=[had_block_size, had_block_size],
         )
-        x_e2m1_desc = TensorDescriptor.from_tensor(
-            x_e2m1,
-            block_shape=[block_size_m, block_size_n // 2],
-        )
-        x_sf_desc = TensorDescriptor.from_tensor(
-            x_sf,
-            block_shape=[SCALE_MEGABLOCK_SIZE.value],
+        y_desc = TensorDescriptor.from_tensor(
+            y,
+            block_shape=[block_size_m, block_size_n],
         )
 
-        (
-            autotuned_fp4_quantization_with_rht_kernel
-            if FOUROVERSIX_AUTOTUNE
-            else fp4_quantization_with_rht_kernel
-        )[grid](
+        rht_kernel[grid](
             x_desc,
-            norm_constant,
             h_desc,
-            x_e2m1_desc,
-            x_sf_desc,
-            M=M,
-            N=N,
+            y_desc,
             BLOCK_SIZE_M=block_size_m,
             BLOCK_SIZE_N=block_size_n,
             GROUP_SIZE_M=1,
             GROUP_SIZE_N=max(
                 2**x for x in range(7) if (N // block_size_n) % (2**x) == 0
             ),
-            TRANSPOSE=transpose,
-            FP4_FORMAT=fp4_format,
-            ROUND_STYLE=round_style,
-            BLOCK_SCALE_2D=block_scale_2d,
-            SCALE_RULE=scale_rule.value,
         )
 
-    if fp4_format == "mxfp4":
+        x = y
+        norm_constant = get_nvfp4_tensor_scale(x, scale_rule=scale_rule)
+
+    (
+        autotuned_fp4_quantization_kernel
+        if FOUROVERSIX_AUTOTUNE
+        else fp4_quantization_kernel
+    )[grid](
+        x,
+        norm_constant,
+        x_e2m1,
+        x_sf,
+        x.stride(0),
+        x.stride(1),
+        M=M,
+        N=N,
+        BLOCK_SIZE_M=block_size_m,
+        BLOCK_SIZE_N=block_size_n,
+        GROUP_SIZE_M=1,
+        GROUP_SIZE_N=max(2**x for x in range(7) if (N // block_size_n) % (2**x) == 0),
+        TRANSPOSE=transpose,
+        FP4_FORMAT=fp4_format,
+        ROUND_STYLE=round_style,
+        BLOCK_SCALE_2D=block_scale_2d,
+        SCALE_RULE=scale_rule.value,
+    )
+
+    if fp4_format == FP4Format.mxfp4:
         x_sf = x_sf.view(torch.float8_e8m0fnu)
 
     return x_e2m1, x_sf, norm_constant
