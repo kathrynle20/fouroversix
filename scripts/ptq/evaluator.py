@@ -55,6 +55,7 @@ class PTQEvaluatorImpl(ABC):
         *,
         device: str,
         dtype: str,
+        max_length: int,
         tasks: list[str],
         trust_remote_code: bool = False,
         **kwargs: dict[str, Any],
@@ -94,7 +95,11 @@ class PTQEvaluatorImpl(ABC):
         print_gpu_memory("Before evaluate", device)
 
         return evaluator.simple_evaluate(
-            model=lm,
+            model=models.huggingface.HFLM(
+                pretrained=model,
+                device=device,
+                max_length=max_length,
+            ),
             tasks=tasks,
             device=device,
             # batch_size=1,
