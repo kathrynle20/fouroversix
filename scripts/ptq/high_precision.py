@@ -1,5 +1,7 @@
 from typing import Any
 
+from fouroversix.utils import DataType
+
 from ..resources import (
     FOUROVERSIX_CACHE_PATH,
     app,
@@ -30,7 +32,7 @@ class HighPrecisionEvaluator(PTQEvaluator):
         model_name: str,
         *,
         device: str,
-        dtype: str,
+        dtype: DataType,
         **kwargs: dict[str, Any],  # noqa: ARG002
     ) -> "AutoModelForCausalLM":
         """Return a model without any quantization."""
@@ -38,5 +40,5 @@ class HighPrecisionEvaluator(PTQEvaluator):
         return AutoModelForCausalLM.from_pretrained(
             model_name,
             device_map=device,
-            dtype=dtype,
+            dtype=dtype.torch(),
         )

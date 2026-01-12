@@ -2,7 +2,7 @@ from importlib.metadata import version
 
 from .backend import MatmulBackend, QuantizeBackend
 from .frontend import fp4_matmul, quantize_to_fp4
-from .ptq import apply_ptq
+from .model import quantize_model
 from .utils import AdaptiveBlockScalingRule, DataType, FP4Format, RoundStyle
 
 __version__ = version("fouroversix")
@@ -14,7 +14,7 @@ __all__ = [
     "MatmulBackend",
     "QuantizeBackend",
     "RoundStyle",
-    "apply_ptq",
     "fp4_matmul",
+    "quantize_model",
     "quantize_to_fp4",
 ]

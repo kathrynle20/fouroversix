@@ -18,7 +18,7 @@ awq_img = get_image(dependencies=[Dependency.fouroversix, Dependency.awq])
 with awq_img.imports():
     import torch
     from awq.quantize.pre_quant import apply_awq, run_awq
-    from fouroversix import apply_ptq
+    from fouroversix import quantize_model
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     if TYPE_CHECKING:
@@ -104,10 +104,10 @@ class AWQEvaluator(RTNEvaluatorImpl):
         apply_awq(model, awq_results)
 
         # Quantize the model
-        apply_ptq(
+        quantize_model(
             model,
-            device=device,
-            dtype=dtype,
+            a_scale_rule=a_scale_rule,
+            w_scale_rule=w_scale_rule,
             **kwargs,
         )
 

@@ -6,7 +6,7 @@ from typing import Any
 import torch
 import torch.nn.functional as F  # noqa: N812
 
-from .utils import AdaptiveBlockScalingRule, DataType, FP4Format, RoundStyle
+from .utils import AdaptiveBlockScalingRule, FP4Format, RoundStyle
 
 SM_100 = 10
 SM_110 = 11
@@ -56,7 +56,7 @@ class MatmulBackend(str, Enum):
         b_normconst: torch.Tensor,
         *,
         fp4_format: FP4Format,
-        out_dtype: DataType,
+        out_dtype: torch.dtype,
         out_shape: tuple[int, int] | None = None,
     ) -> torch.Tensor:
         """
@@ -82,27 +82,27 @@ class MatmulBackend(str, Enum):
                 (
                     SM_100,
                     FP4Format.mxfp4,
-                    DataType.bfloat16,
+                    torch.bfloat16,
                 ): gemm_mxfp4mxfp4_accum_fp32_out_bf16_tnt,
                 (
                     SM_100,
                     FP4Format.nvfp4,
-                    DataType.bfloat16,
+                    torch.bfloat16,
                 ): gemm_nvfp4nvfp4_accum_fp32_out_bf16_tnt,
                 (
                     SM_120,
                     FP4Format.nvfp4,
-                    DataType.bfloat16,
+                    torch.bfloat16,
                 ): gemm_nvfp4nvfp4_accum_fp32_out_bf16_tnt_sm120,
                 (
                     SM_100,
                     FP4Format.nvfp4,
-                    DataType.float16,
+                    torch.float16,
                 ): gemm_nvfp4nvfp4_accum_fp32_out_fp16_tnt,
                 (
                     SM_120,
                     FP4Format.nvfp4,
-                    DataType.float16,
+                    torch.float16,
                 ): gemm_nvfp4nvfp4_accum_fp32_out_fp16_tnt_sm120,
             }
 
@@ -142,7 +142,7 @@ class MatmulBackend(str, Enum):
             elif b.shape[1] > a.shape[1]:
                 a = F.pad(a, (0, b.shape[1] - a.shape[1]))
 
-            out = ((a @ b.T).float() * a_normconst * b_normconst).to(out_dtype.torch())
+            out = ((a @ b.T).float() * a_normconst * b_normconst).to(out_dtype)
 
             return out[: out_shape[0], : out_shape[1]] if out_shape is not None else out
 

@@ -9,69 +9,74 @@ from ..resources import FOUROVERSIX_CACHE_PATH, app, cache_volume, hf_secret
 from .rtn import RTNEvaluatorImpl, rtn_img
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
     from pathlib import Path
 
-    from fouroversix.utils import AdaptiveBlockScalingRule, DataType, FP4Format
+    from fouroversix.utils import AdaptiveBlockScalingRule, DataType
+
 
 with rtn_img.imports():
     import torch
-    from fouroversix import fp4_matmul
-    from fouroversix.ptq import apply_ptq
+    from fouroversix import fp4_matmul, quantize_model
+    from fouroversix.model import FP4Linear
     from transformers import AutoModelForCausalLM
 
 
-def build_forward(
-    *,
-    device: str,
-    dtype: DataType,
-    fp4_format: FP4Format,
-    a_scale_rule: AdaptiveBlockScalingRule,
-    w_scale_rule: AdaptiveBlockScalingRule,
-    a_quantize_kwargs: dict[str, Any],
-    w_quantize_kwargs: dict[str, Any],
-    smoothquant_alpha: float,
-    **kwargs: dict[str, Any],  # noqa: ARG001
-) -> Callable:
-    def forward(
-        self,  # noqa: ANN001
-        input: tuple[torch.Tensor, ...],  # noqa: A002
-    ) -> torch.Tensor:
+class FP4LinearWithSmoothing(FP4Linear):
+    """Drop-in replacement for `FP4Linear` that implements SmoothQuant-style scaling."""
+
+    def __init__(
+        self,
+        *args: list[Any],
+        smoothquant_alpha: float,
+        **kwargs: dict[str, Any],
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self.smoothquant_alpha = smoothquant_alpha
+
+    def apply_ptq(self) -> None:
+        """
+        Override the parent method to do nothing, since we need the high-precision
+        weight when doing PTQ with SmoothQuant.
+        """
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:  # noqa: A002
+        """Forward pass for the FP4 linear layer with SmoothQuant-style scaling."""
+
         out = torch.empty(
             *input.shape[:-1],
             self.weight.shape[0],
-            device=device,
-            dtype=dtype.torch(),
+            device=input.device,
+            dtype=self.out_dtype,
         )
 
         # Slow bmm
         for i in range(input.shape[0]):
-            s = (input[i].abs().max(dim=0).values ** smoothquant_alpha) / (
-                self.weight.abs().max(dim=0).values ** (1 - smoothquant_alpha)
+            s = (input[i].abs().max(dim=0).values ** self.smoothquant_alpha) / (
+                self.weight.abs().max(dim=0).values ** (1 - self.smoothquant_alpha)
             )
 
             out[i] = fp4_matmul(
                 input[i] / s[None, :],
                 self.weight * s[None, :],
-                fp4_format=fp4_format,
-                out_dtype=dtype,
+                fp4_format=self.fp4_format,
+                out_dtype=self.out_dtype,
                 out_shape=(input.shape[1], self.weight.shape[0]),
                 a_quantize_kwargs={
-                    "scale_rule": a_scale_rule,
-                    **a_quantize_kwargs,
+                    "scale_rule": self.a_scale_rule,
+                    "fp4_format": self.fp4_format,
+                    **(self.a_quantize_kwargs or {}),
                 },
                 b_quantize_kwargs={
-                    "scale_rule": w_scale_rule,
-                    **w_quantize_kwargs,
+                    "scale_rule": self.w_scale_rule,
+                    "fp4_format": self.fp4_format,
+                    **(self.w_quantize_kwargs or {}),
                 },
             )
 
-        if hasattr(self, "bias") and self.bias is not None:
+        if self.bias is not None:
             out = out + self.bias
 
         return out
-
-    return forward
 
 
 @app.cls(
@@ -102,14 +107,14 @@ class SmoothQuantEvaluator(RTNEvaluatorImpl):
             dtype=dtype.torch(),
             **(model_kwargs or {}),
         )
-        apply_ptq(
+
+        quantize_model(
             model,
-            device=device,
-            dtype=dtype,
-            build_forward_fn=build_forward,
+            linear_cls=FP4LinearWithSmoothing,
             smoothquant_alpha=smoothquant_alpha,
             **kwargs,
         )
+
         return model
 
     @modal.method()
