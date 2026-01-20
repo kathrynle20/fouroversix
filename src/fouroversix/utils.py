@@ -34,6 +34,17 @@ class AdaptiveBlockScalingRule(str, Enum):
             AdaptiveBlockScalingRule.mse: 3,
         }[self]
 
+    def get_maximum_allowed_quantized_value(self) -> int:
+        """Return the maximum allowed quantized value for the rule."""
+
+        return {
+            AdaptiveBlockScalingRule.always_4: 4 * 448,
+            AdaptiveBlockScalingRule.always_6: 6 * 448,
+            AdaptiveBlockScalingRule.l1_norm: 6 * 256,
+            AdaptiveBlockScalingRule.mse: 6 * 256,
+            AdaptiveBlockScalingRule.abs_max: 6 * 256,
+        }[self]
+
 
 class DataType(str, Enum):
     """High-precision data types."""

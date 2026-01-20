@@ -6,6 +6,7 @@ from typing import Any
 import torch
 import torch.nn.functional as F  # noqa: N812
 
+from .fp4_tensor import FP4Tensor
 from .utils import AdaptiveBlockScalingRule, FP4Format, RoundStyle
 
 SM_100 = 10
@@ -48,22 +49,43 @@ class MatmulBackend(str, Enum):
 
     def fp4_matmul(  # noqa: C901
         self,
-        a_e2m1: torch.Tensor,
-        a_sf: torch.Tensor,
-        a_amax: torch.Tensor,
-        b_e2m1: torch.Tensor,
-        b_sf: torch.Tensor,
-        b_amax: torch.Tensor,
+        input: FP4Tensor,
+        other: FP4Tensor,
         *,
-        fp4_format: FP4Format,
-        scale_rule: AdaptiveBlockScalingRule,
         out_dtype: torch.dtype,
-        out_shape: tuple[int, int] | None = None,
     ) -> torch.Tensor:
         """
         Perform a matrix multiplication with two FP4-quantized tensors. See frontend.py
         for more details.
         """
+
+        if input.fp4_format != other.fp4_format:
+            msg = "Both inputs must have the same FP4 format"
+            raise ValueError(msg)
+
+        if input.original_shape[1] != other.original_shape[1]:
+            msg = (
+                "Both inputs must be in row-major layout and have the same inner "
+                "dimension"
+            )
+            raise ValueError(msg)
+
+        out_shape = (input.original_shape[0], other.original_shape[0])
+
+        if input.fp4_format == FP4Format.mxfp4:
+            alpha = torch.ones(
+                1,
+                device=input.e2m1_values.device,
+                dtype=torch.float32,
+            )
+        elif input.fp4_format == FP4Format.nvfp4:
+            alpha = (
+                (input.amax * other.amax)
+                / (
+                    input.scale_rule.get_maximum_allowed_quantized_value()
+                    * other.scale_rule.get_maximum_allowed_quantized_value()
+                )
+            ).to(torch.float32)
 
         if self == MatmulBackend.cutlass:
             from .ops import (
@@ -73,16 +95,6 @@ class MatmulBackend(str, Enum):
                 gemm_nvfp4nvfp4_accum_fp32_out_fp16_tnt,
                 gemm_nvfp4nvfp4_accum_fp32_out_fp16_tnt_sm120,
             )
-
-            if fp4_format == FP4Format.mxfp4:
-                alpha = torch.ones(1, device=a_e2m1.device, dtype=torch.float32)
-            elif fp4_format == FP4Format.nvfp4:
-                if scale_rule == AdaptiveBlockScalingRule.always_6:
-                    alpha = ((a_amax * b_amax) / (6 * 6 * 448 * 448)).to(torch.float32)
-                elif scale_rule == AdaptiveBlockScalingRule.always_4:
-                    alpha = ((a_amax * b_amax) / (4 * 4 * 448 * 448)).to(torch.float32)
-                else:
-                    alpha = ((a_amax * b_amax) / (6 * 6 * 256 * 256)).to(torch.float32)
 
             gemm_fns = {
                 (
@@ -113,7 +125,7 @@ class MatmulBackend(str, Enum):
             }
 
             gemm_fn = gemm_fns.get(
-                (torch.cuda.get_device_capability()[0], fp4_format, out_dtype),
+                (torch.cuda.get_device_capability()[0], input.fp4_format, out_dtype),
             )
 
             if gemm_fn is None:
@@ -123,28 +135,19 @@ class MatmulBackend(str, Enum):
                 )
                 raise ValueError(msg)
 
-            out = gemm_fn(a_e2m1, b_e2m1, a_sf, b_sf, alpha)
+            out = gemm_fn(
+                input.e2m1_values,
+                other.e2m1_values,
+                input.scale_factors,
+                other.scale_factors,
+                alpha,
+            )
 
-            if out_shape is not None and out.shape != out_shape:
-                out = out[: out_shape[0], : out_shape[1]]
-
-            return out
-
-        if self == MatmulBackend.pytorch:
+        elif self == MatmulBackend.pytorch:
             from .quantize.reference import dequantize_from_fp4
 
-            a = dequantize_from_fp4(
-                a_e2m1,
-                a_sf,
-                dtype=torch.float32,
-                fp4_format=fp4_format,
-            )
-            b = dequantize_from_fp4(
-                b_e2m1,
-                b_sf,
-                dtype=torch.float32,
-                fp4_format=fp4_format,
-            )
+            a = dequantize_from_fp4(input, dtype=torch.float32)
+            b = dequantize_from_fp4(other, dtype=torch.float32)
 
             # Fix mismatched shapes introduced by padding during quantization
             if a.shape[1] > b.shape[1]:
@@ -152,14 +155,16 @@ class MatmulBackend(str, Enum):
             elif b.shape[1] > a.shape[1]:
                 a = F.pad(a, (0, b.shape[1] - a.shape[1]))
 
-            out = ((a @ b.T).float() * a_amax / (6 * 448) * b_amax / (6 * 448)).to(
-                out_dtype,
-            )
+            out = ((a @ b.T).float() * alpha).to(out_dtype)
 
-            return out[: out_shape[0], : out_shape[1]] if out_shape is not None else out
+        else:
+            msg = f"Invalid backend: {self}"
+            raise ValueError(msg)
 
-        msg = f"Invalid backend: {self}"
-        raise ValueError(msg)
+        if out_shape is not None and out.shape != out_shape:
+            out = out[: out_shape[0], : out_shape[1]]
+
+        return out
 
 
 class QuantizeBackend(str, Enum):
@@ -288,23 +293,14 @@ class QuantizeBackend(str, Enum):
         round_style: RoundStyle = RoundStyle.nearest,
         transpose: bool = False,
         **kwargs: dict[str, Any],
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
+    ) -> FP4Tensor:
         """Quantize a tensor to FP4. See frontend.py for more details."""
 
         if self == QuantizeBackend.cuda:
-            from .ops import quantize_to_fp4
+            msg = "The CUDA backend is currently disabled and will be updated soon"
+            raise NotImplementedError(msg)
 
-            return quantize_to_fp4(
-                x,
-                fp4_format == FP4Format.nvfp4,
-                round_style == RoundStyle.nearest,
-                had is not None,
-                transpose,
-                scale_rule.cuda_id(),
-                **kwargs,
-            )
-
-        if self == QuantizeBackend.transformer_engine:
+        elif self == QuantizeBackend.transformer_engine:
             from transformer_engine.pytorch.tensor.nvfp4_tensor import NVFP4Quantizer
 
             from .quantize.reference import to_blocked
@@ -319,21 +315,22 @@ class QuantizeBackend(str, Enum):
             out = q.quantize(x)
 
             if transpose:
-                return (
-                    out._columnwise_data,  # noqa: SLF001
-                    to_blocked(out._columnwise_scale_inv.view(torch.float8_e4m3fn)),  # noqa: SLF001
-                    out._amax_columnwise,  # noqa: SLF001
+                e2m1_values = out._columnwise_data  # noqa: SLF001
+                scale_factors = to_blocked(
+                    out._columnwise_scale_inv.view(torch.float8_e4m3fn),  # noqa: SLF001
                 )
-            return (
-                out._rowwise_data,  # noqa: SLF001
-                to_blocked(out._rowwise_scale_inv.view(torch.float8_e4m3fn)),  # noqa: SLF001
-                out._amax_rowwise,  # noqa: SLF001
-            )
+                amax = out._amax_columnwise  # noqa: SLF001
+            else:
+                e2m1_values = out._rowwise_data  # noqa: SLF001
+                scale_factors = to_blocked(
+                    out._rowwise_scale_inv.view(torch.float8_e4m3fn),  # noqa: SLF001
+                )
+                amax = out._amax_rowwise  # noqa: SLF001
 
-        if self == QuantizeBackend.triton:
+        elif self == QuantizeBackend.triton:
             from .quantize.triton_kernel import quantize_to_fp4
 
-            return quantize_to_fp4(
+            e2m1_values, scale_factors, amax = quantize_to_fp4(
                 x,
                 had=had,
                 fp4_format=fp4_format,
@@ -344,7 +341,7 @@ class QuantizeBackend(str, Enum):
                 **kwargs,
             )
 
-        if self == QuantizeBackend.pytorch:
+        elif self == QuantizeBackend.pytorch:
             from .quantize.reference import quantize_to_fp4
 
             rows_div = 128
@@ -361,7 +358,7 @@ class QuantizeBackend(str, Enum):
                     ),
                 )
 
-            return quantize_to_fp4(
+            e2m1_values, scale_factors, amax = quantize_to_fp4(
                 x,
                 had=had,
                 fp4_format=fp4_format,
@@ -372,8 +369,18 @@ class QuantizeBackend(str, Enum):
                 **kwargs,
             )
 
-        msg = f"Invalid backend: {self}"
-        raise ValueError(msg)
+        else:
+            msg = f"Invalid backend: {self}"
+            raise ValueError(msg)
+
+        return FP4Tensor(
+            e2m1_values,
+            scale_factors,
+            amax,
+            fp4_format,
+            x.shape,
+            scale_rule,
+        )
 
 
 def quantize_to_fp4(
@@ -386,7 +393,7 @@ def quantize_to_fp4(
     fp4_format: FP4Format = FP4Format.nvfp4,
     round_style: RoundStyle = RoundStyle.nearest,
     transpose: bool = False,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
+) -> FP4Tensor:
     """
     Quantize a tensor to FP4.
 

@@ -1,30 +1,24 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 
 from .backend import MatmulBackend, QuantizeBackend
 from .utils import AdaptiveBlockScalingRule, FP4Format, RoundStyle
 
+if TYPE_CHECKING:
+    from .fp4_tensor import FP4Tensor
+
 
 def fp4_matmul(
-    a: torch.Tensor | None = None,
-    b: torch.Tensor | None = None,
+    input: torch.Tensor | FP4Tensor,
+    other: torch.Tensor | FP4Tensor,
     *,
     backend: MatmulBackend | None = None,
-    a_e2m1: torch.Tensor | None = None,
-    a_sf: torch.Tensor | None = None,
-    a_amax: torch.Tensor | None = None,
-    b_e2m1: torch.Tensor | None = None,
-    b_sf: torch.Tensor | None = None,
-    b_amax: torch.Tensor | None = None,
-    a_quantize_kwargs: dict[str, Any] | None = None,
-    b_quantize_kwargs: dict[str, Any] | None = None,
-    fp4_format: FP4Format = FP4Format.nvfp4,
-    scale_rule: AdaptiveBlockScalingRule = AdaptiveBlockScalingRule.mse,
+    input_quantize_kwargs: dict[str, Any] | None = None,
+    other_quantize_kwargs: dict[str, Any] | None = None,
     out_dtype: torch.dtype = torch.bfloat16,
-    out_shape: tuple[int, int] | None = None,
 ) -> torch.Tensor:
     """
     Perform a matrix multiplication (`a @ b.T`) with two FP4-quantized tensors provided
@@ -115,32 +109,17 @@ def fp4_matmul(
 
     """
 
-    if a is None and (a_e2m1 is None or a_sf is None):
-        msg = "If a is None, a_e2m1 and a_sf must be provided"
-        raise ValueError(msg)
+    if input_quantize_kwargs is None:
+        input_quantize_kwargs = {}
 
-    if b is None and (b_e2m1 is None or b_sf is None):
-        msg = "If b is None, b_e2m1 and b_sf must be provided"
-        raise ValueError(msg)
+    if other_quantize_kwargs is None:
+        other_quantize_kwargs = {}
 
-    if a_quantize_kwargs is None:
-        a_quantize_kwargs = {}
+    if isinstance(input, torch.Tensor):
+        input = quantize_to_fp4(input, **(input_quantize_kwargs or {}))
 
-    if b_quantize_kwargs is None:
-        b_quantize_kwargs = {}
-
-    if a_e2m1 is None or a_sf is None:
-        a_e2m1, a_sf, a_amax = quantize_to_fp4(a, **a_quantize_kwargs)
-
-    if b_e2m1 is None or b_sf is None:
-        b_e2m1, b_sf, b_amax = quantize_to_fp4(b, **b_quantize_kwargs)
-
-    kwargs = {
-        "fp4_format": fp4_format,
-        "scale_rule": scale_rule,
-        "out_dtype": out_dtype,
-        "out_shape": out_shape,
-    }
+    if isinstance(other, torch.Tensor):
+        other = quantize_to_fp4(other, **(other_quantize_kwargs or {}))
 
     if backend is None:
         backend = MatmulBackend.auto_select()
@@ -148,15 +127,7 @@ def fp4_matmul(
         msg = f"Backend {backend} is not available"
         raise ValueError(msg)
 
-    return backend.fp4_matmul(
-        a_e2m1,
-        a_sf,
-        a_amax,
-        b_e2m1,
-        b_sf,
-        b_amax,
-        **kwargs,
-    )
+    return backend.fp4_matmul(input, other, out_dtype=out_dtype)
 
 
 def quantize_to_fp4(
@@ -169,7 +140,7 @@ def quantize_to_fp4(
     fp4_format: FP4Format = FP4Format.nvfp4,
     round_style: RoundStyle = RoundStyle.nearest,
     transpose: bool = False,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
+) -> FP4Tensor:
     """
     Quantize a tensor to FP4.
 

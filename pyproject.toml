@@ -63,10 +63,13 @@ ignore = [
     "D203",
     "D205",
     "D212",
+
+    "A001", "A002",  # Allow variables to be named `input`
     "FIX002",  # Allow TODO comments
     "FIX004",  # Allow hacks
     "PLC0415",  # Allow imports that aren't at the top of the file
     "PLR0913",  # Allow functions with more than 5 arguments
+    "RET506",  # Allow elif after raise
     "TD003",  # Don't require issue links on TODO comments
 ]
 select = [

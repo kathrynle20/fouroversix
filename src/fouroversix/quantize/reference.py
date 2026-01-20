@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import torch
 from fouroversix.utils import AdaptiveBlockScalingRule, FP4Format, RoundStyle
+
+if TYPE_CHECKING:
+    from fouroversix.fp4_tensor import FP4Tensor
 
 MIN_ALLOWED_NORM_CONSTANT = 1e-12
 E2M1_MAX_VALUE = 6
@@ -394,49 +397,45 @@ def unpack_packed_fp4(
 
 
 def dequantize_from_fp4(
-    x: torch.Tensor,
-    scales: torch.Tensor,
-    x_amax: torch.Tensor | None = None,
+    input: FP4Tensor,
     *,
-    scale_rule: AdaptiveBlockScalingRule = AdaptiveBlockScalingRule.mse,
     dtype: torch.dtype = torch.bfloat16,
-    fp4_format: FP4Format = FP4Format.nvfp4,
-    values_simulation_mode: ValueSimulationMode = None,
 ) -> torch.Tensor:
-    if values_simulation_mode is not None:
-        values = x
-    else:
-        values = unpack_packed_fp4(x, to_dtype=fp4_format.scale_dtype()).to(
-            dtype,
-        )
+    values = unpack_packed_fp4(
+        input.e2m1_values,
+        to_dtype=input.fp4_format.scale_dtype(),
+    ).to(dtype)
 
     scales = from_blocked(
-        scales,
-        (x.shape[0], x.shape[1] // fp4_format.block_size() * 2),
+        input.scale_factors,
+        (
+            input.original_shape[0],
+            input.original_shape[1] // input.fp4_format.block_size() * 2,
+        ),
     )
 
     result = values * scales.to(
         dtype,
-    ).repeat_interleave(fp4_format.block_size(), -1)
+    ).repeat_interleave(input.fp4_format.block_size(), -1)
 
-    if fp4_format == FP4Format.mxfp4:
-        high = (x >> 4) & 0xF
-        low = x & 0xF
-        values = torch.stack([low, high], dim=-1).reshape(x.shape[0], x.shape[1] * 2)
+    if input.fp4_format == FP4Format.mxfp4:
+        high = (input.e2m1_values >> 4) & 0xF
+        low = input.e2m1_values & 0xF
+        values = torch.stack([low, high], dim=-1).reshape(*input.original_shape)
         x_sign = torch.where(
             ((values >> 3) & 0x1) == 0,
             torch.tensor(1, dtype=dtype),
             torch.tensor(-1, dtype=dtype),
         )
         result = result * x_sign
-    elif fp4_format == FP4Format.nvfp4:
-        if x_amax is not None:
-            if scale_rule == AdaptiveBlockScalingRule.always_6:
-                result = (result.to(torch.float32) * x_amax / (6 * 448)).to(dtype)
-            elif scale_rule == AdaptiveBlockScalingRule.always_4:
-                result = (result.to(torch.float32) * x_amax / (4 * 448)).to(dtype)
+    elif input.fp4_format == FP4Format.nvfp4:
+        if input.amax is not None:
+            if input.scale_rule == AdaptiveBlockScalingRule.always_6:
+                result = (result.to(torch.float32) * input.amax / (6 * 448)).to(dtype)
+            elif input.scale_rule == AdaptiveBlockScalingRule.always_4:
+                result = (result.to(torch.float32) * input.amax / (4 * 448)).to(dtype)
             else:
-                result = (result.to(torch.float32) * x_amax / (6 * 256)).to(dtype)
+                result = (result.to(torch.float32) * input.amax / (6 * 256)).to(dtype)
 
     return result
 

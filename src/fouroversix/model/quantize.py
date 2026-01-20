@@ -16,19 +16,11 @@ def quantize_model(
     a_scale_rule: AdaptiveBlockScalingRule = AdaptiveBlockScalingRule.mse,
     w_scale_rule: AdaptiveBlockScalingRule = AdaptiveBlockScalingRule.mse,
     w_scale_2d: bool = False,
-    a_quantize_kwargs: dict[str, Any] | None = None,
-    w_quantize_kwargs: dict[str, Any] | None = None,
     linear_cls: type[FP4Linear] | None = None,
     **kwargs: dict[str, Any],
 ) -> None:
     if exclude_layers is None:
         exclude_layers = ["lm_head"]
-
-    if a_quantize_kwargs is None:
-        a_quantize_kwargs = {}
-
-    if w_quantize_kwargs is None:
-        w_quantize_kwargs = {}
 
     if linear_cls is None:
         linear_cls = FP4Linear
@@ -47,8 +39,6 @@ def quantize_model(
             a_scale_rule=a_scale_rule,
             w_scale_rule=w_scale_rule,
             w_scale_2d=w_scale_2d,
-            a_quantize_kwargs=a_quantize_kwargs,
-            w_quantize_kwargs=w_quantize_kwargs,
             **kwargs,
         )
 
