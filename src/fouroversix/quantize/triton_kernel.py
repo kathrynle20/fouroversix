@@ -528,7 +528,7 @@ def fp4_quantization_kernel(
     x_sf_desc.store([scale_block_offset], x_scales)
 
 
-def quantize_to_fp4(  # noqa: C901
+def quantize_to_fp4(
     x: torch.Tensor,
     x_amax: torch.Tensor | None = None,
     had: torch.Tensor | None = None,
@@ -544,32 +544,23 @@ def quantize_to_fp4(  # noqa: C901
     else:
         M, N = x.shape
 
-    if fp4_format == FP4Format.mxfp4:
-        block_size_m = 128
-        block_size_n = 128
-        scale_block_size = 32
-        scale_dtype = torch.uint8
+    block_size_m = 128
+    block_size_n = 4 * fp4_format.block_size()
+    scale_dtype = torch.float8_e4m3fn if fp4_format == FP4Format.nvfp4 else torch.uint8
 
-        if x_amax is None:
-            x_amax = torch.ones(1, device=x.device, dtype=torch.float32)
-    elif fp4_format == FP4Format.nvfp4:
-        block_size_m = 128
-        block_size_n = 64
-        scale_block_size = 16
-        scale_dtype = torch.float8_e4m3fn
-
-        if x_amax is None:
-            x_amax = x.abs().max().float()
-
-    # print(scale_dtype)
-    # print("===")
+    if x_amax is None:
+        x_amax = (
+            x.abs().max().float()
+            if fp4_format == FP4Format.nvfp4
+            else torch.ones(1, device=x.device, dtype=torch.float32)
+        )
 
     padded_m = M + (block_size_m - M % block_size_m) % block_size_m
     padded_n = N + (block_size_n - N % block_size_n) % block_size_n
 
     x_e2m1 = torch.empty((padded_m, padded_n // 2), device=x.device, dtype=torch.uint8)
     x_sf = torch.empty(
-        padded_m * padded_n // scale_block_size,
+        padded_m * padded_n // fp4_format.block_size(),
         device=x.device,
         dtype=scale_dtype,
     )
