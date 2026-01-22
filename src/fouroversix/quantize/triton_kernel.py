@@ -85,7 +85,7 @@ def fp32_to_scaled_fp4_kernel_fouroversix(  # noqa: C901, PLR0912
     # Calculate six blocks
     if (
         SCALE_RULE == SCALE_RULE_ALWAYS_6 or SCALE_RULE == SCALE_RULE_ALWAYS_4
-    ):  # noqa: SIM109, PLR1714
+    ):
         x_scales_hp = tl.max(x_scale_blocks.abs(), axis=-1) * E4M3_MAX_VALUE / x_amax
     else:
         x_scales_hp = (
@@ -113,7 +113,7 @@ def fp32_to_scaled_fp4_kernel_fouroversix(  # noqa: C901, PLR0912
 
     if (
         SCALE_RULE == SCALE_RULE_ALWAYS_6 or SCALE_RULE == SCALE_RULE_ALWAYS_4
-    ):  # noqa: SIM109, PLR1714
+    ):
         (x_block_scaled_6_b1, x_block_scaled_6_b2) = (
             tl.where(
                 x_scales_6.expand_dims(2).to(x_amax.dtype) != 0,
