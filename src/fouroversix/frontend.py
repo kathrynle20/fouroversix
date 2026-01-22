@@ -127,25 +127,22 @@ def quantize_to_fp4(
     ### With Four Over Six
 
     ```
-    a = torch.tensor(1024, 1024, dtype=torch.bfloat16, device="cuda")
-    a_e2m1, a_sf, a_normconst = quantize_to_fp4(a)
+    x = torch.tensor(1024, 1024, dtype=torch.bfloat16, device="cuda")
+    x_quantized = quantize_to_fp4(x)
     ```
 
     ### Without Four Over Six
 
     ```
-    a = torch.tensor(1024, 1024, dtype=torch.bfloat16, device="cuda")
-    a_e2m1, a_sf, a_normconst = quantize_to_fp4(
-        a,
-        scale_rule=AdaptiveBlockScalingRule.always_6,
-    )
+    x = torch.tensor(1024, 1024, dtype=torch.bfloat16, device="cuda")
+    x_quantized = quantize_to_fp4(x, scale_rule=AdaptiveBlockScalingRule.always_6)
     ```
 
     ### With Stochastic Rounding
 
     ```
-    a = torch.tensor(1024, 1024, dtype=torch.bfloat16, device="cuda")
-    a_e2m1, a_sf, a_normconst = quantize_to_fp4(a, round_style=RoundStyle.stochastic)
+    x = torch.tensor(1024, 1024, dtype=torch.bfloat16, device="cuda")
+    x_quantized = quantize_to_fp4(x, round_style=RoundStyle.stochastic)
     ```
 
     ### With the Random Hadamard Transform
@@ -153,9 +150,9 @@ def quantize_to_fp4(
     ```
     from fouroversix.quantize import get_rht_matrix
 
-    a = torch.tensor(1024, 1024, dtype=torch.bfloat16, device="cuda")
+    x = torch.tensor(1024, 1024, dtype=torch.bfloat16, device="cuda")
     had = get_rht_matrix()
-    a_e2m1, a_sf, a_normconst = quantize_to_fp4(a, had=had)
+    x_quantized = quantize_to_fp4(x, had=had)
     ```
 
     ## Backends
@@ -209,9 +206,8 @@ def quantize_to_fp4(
             as `fp4_matmul` requires that both tensors are provided in row-major format.
 
     Returns:
-        The packed E2M1 values.
-        The FP8 scale factors.
-        The tensor-wide FP32 scale factor.
+        A quantized FP4Tensor, which contains the packed E2M1 values, the FP8 scale
+        factors, and the tensor-wide FP32 scale factor.
 
     """
 
