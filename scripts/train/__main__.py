@@ -31,6 +31,7 @@ img_8gpus = get_image(
 
 
 def train(
+    *,
     batch_size: int,
     checkpoint_interval: int,
     checkpoint_load_step: int,
@@ -50,7 +51,7 @@ def train(
     seed: int,
     tokenizer: str,
     training_steps: int | None,
-):
+) -> None:
     import torch
 
     # Cache activations and gradients and set dump folder
@@ -152,7 +153,7 @@ def train(
             ],
         )
 
-    subprocess.run(args, check=True)  # noqa: S603
+    subprocess.run(args, check=True)
 
 
 @app.function(
@@ -164,7 +165,7 @@ def train(
     volumes={FOUROVERSIX_CACHE_PATH: cache_volume},
     secrets=[wandb_secret],
 )
-def train_4xb200(**kwargs: dict[str, Any]):
+def train_4xb200(**kwargs: dict[str, Any]) -> None:
     os.chdir(FOUROVERSIX_INSTALL_PATH / "third_party" / "flame")
     train(**kwargs)
 
@@ -178,7 +179,7 @@ def train_4xb200(**kwargs: dict[str, Any]):
     volumes={FOUROVERSIX_CACHE_PATH: cache_volume},
     secrets=[wandb_secret],
 )
-def train_4xh200(**kwargs: dict[str, Any]):
+def train_4xh200(**kwargs: dict[str, Any]) -> None:
     os.chdir(FOUROVERSIX_INSTALL_PATH / "third_party" / "flame")
     train(**kwargs)
 
@@ -192,7 +193,7 @@ def train_4xh200(**kwargs: dict[str, Any]):
     volumes={FOUROVERSIX_CACHE_PATH: cache_volume},
     secrets=[wandb_secret],
 )
-def train_8xb200(**kwargs: dict[str, Any]):
+def train_8xb200(**kwargs: dict[str, Any]) -> None:
     os.chdir(FOUROVERSIX_INSTALL_PATH / "third_party" / "flame")
     train(**kwargs)
 
@@ -221,7 +222,7 @@ def train_8xb200(**kwargs: dict[str, Any]):
 @click.option("--tokenizer", type=str, default="fla-hub/transformer-1.3B-100B")
 @click.option("--training-steps", type=int, default=None)
 @click.option("--wait-for-pid", type=int, default=None)
-def cli(**kwargs: dict[str, Any]):
+def cli(**kwargs: dict[str, Any]) -> None:
     # Options that are not passed to the train function
     detach = kwargs.pop("detach", False)
     modal_gpu = kwargs.pop("modal_gpu", "B200:4")
@@ -239,12 +240,13 @@ def cli(**kwargs: dict[str, Any]):
         time.sleep(60)
 
     if not Path(kwargs["model_config"]).exists():
-        kwargs["model_config"] = Path(__file__).parent.parent.parent / kwargs["model_config"]
+        kwargs["model_config"] = (
+            Path(__file__).parent.parent.parent / kwargs["model_config"]
+        )
 
     if not Path(kwargs["model_config"]).exists():
-        raise FileNotFoundError(
-            f"Model config file not found: {kwargs['model_config']}",
-        )
+        msg = f"Model config file not found: {kwargs['model_config']}"
+        raise FileNotFoundError(msg)
 
     # Set exp folder on Modal
     if use_modal:

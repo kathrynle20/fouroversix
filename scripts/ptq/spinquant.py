@@ -79,8 +79,8 @@ class SpinQuantOptimizer:
     ) -> None:
         """Optimize a model with SpinQuant."""
 
-        subprocess.run(  # noqa: S603
-            [  # noqa: S607
+        subprocess.run(
+            [
                 "torchrun",
                 "--nnodes=1",
                 "--nproc_per_node=auto",

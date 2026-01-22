@@ -38,7 +38,7 @@ def get_cuda_bare_metal_version() -> Version:
         )
         raise RuntimeError(msg)
 
-    raw_output = subprocess.check_output(  # noqa: S603
+    raw_output = subprocess.check_output(
         [CUDA_HOME + "/bin/nvcc", "-V"],
         universal_newlines=True,
     )
@@ -215,7 +215,7 @@ if SKIP_CUDA_BUILD:
 else:
     if Path(".git").exists():
         subprocess.run(
-            [  # noqa: S607
+            [
                 "git",
                 "submodule",
                 "update",

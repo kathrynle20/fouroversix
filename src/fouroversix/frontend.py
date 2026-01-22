@@ -8,7 +8,7 @@ from .backend import MatmulBackend, QuantizeBackend
 from .utils import AdaptiveBlockScalingRule, FP4Format, RoundStyle
 
 if TYPE_CHECKING:
-    from .fp4_tensor import FP4Tensor
+    from .quantize import FP4Tensor
 
 
 def fp4_matmul(
@@ -28,8 +28,8 @@ def fp4_matmul(
 
     Each tensor may be provided in either high or low precision. If provided in high
     precision, tensors will be quantized to FP4 prior to the matrix multiplication, and
-    quantization may be configured with the `a_quantization_kwargs` and
-    `b_quantization_kwargs` parameters. For example, the following two code samples are
+    quantization may be configured with the `input_quantize_kwargs` and
+    `other_quantize_kwargs` parameters. For example, the following two code samples are
     equivalent:
 
     ### With High-Precision Inputs
@@ -46,17 +46,10 @@ def fp4_matmul(
     a = torch.tensor(1024, 1024, dtype=torch.bfloat16, device="cuda")
     b = torch.tensor(1024, 1024, dtype=torch.bfloat16, device="cuda")
 
-    a_e2m1, a_sf, a_normconst = quantize_to_fp4(a)
-    b_e2m1, b_sf, b_normconst = quantize_to_fp4(b)
+    a_quantized = quantize_to_fp4(a)
+    b_quantized = quantize_to_fp4(b)
 
-    out = fp4_matmul(
-        a_e2m1=a_e2m1,
-        a_sf=a_sf,
-        a_normconst=a_normconst,
-        b_e2m1=b_e2m1,
-        b_sf=b_sf,
-        b_normconst=b_normconst
-    )
+    out = fp4_matmul(a_quantized, b_quantized)
     ```
 
     ## Backends
@@ -74,35 +67,20 @@ def fp4_matmul(
     ## Parameters
 
     Args:
-        a (torch.Tensor): The high-precision input tensor A.
-        b (torch.Tensor): The high-precision input tensor B.
+        input (torch.Tensor | FP4Tensor): The first tensor to be multiplied.
+        other (torch.Tensor | FP4Tensor): The second tensor to be multiplied.
         backend (MatmulBackend): The backend to use for the matrix multiplication,
             either `MatmulBackend.cutlass` or `MatmulBackend.pytorch`. If no backend is
             provided, CUTLASS will be used if the machine has a Blackwell GPU, and
             PyTorch will be used otherwise.
-        a_e2m1 (torch.Tensor): The values of the first input tensor in packed E2M1
-            format (2 values per byte).
-        a_sf (torch.Tensor): The scale factors of the first input tensor.
-        a_amax (torch.Tensor): The absolute maximum value of the first input tensor.
-        b_e2m1 (torch.Tensor): The values of the second input tensor in packed E2M1
-            format (2 values per byte).
-        b_sf (torch.Tensor): The scale factors of the second input tensor.
-        b_amax (torch.Tensor): The absolute maximum value of the second input tensor.
-        a_quantize_kwargs (dict): If `a` is provided in high precision, these parameters
-            will be passed to the `quantize_to_fp4` call done prior to the matrix
-            multiplication.
-        b_quantize_kwargs (dict): If `b` is provided in high precision, these parameters
-            will be passed to the `quantize_to_fp4` call done prior to the matrix
-            multiplication.
-        fp4_format (FP4Format): The FP4 format of the input tensors, either
-            `FP4Format.nvfp4` or `FP4Format.mxfp4`.
-        scale_rule (AdaptiveBlockScalingRule): The scaling rule that was used during
-            quantization of the input tensors.
+        input_quantize_kwargs (dict): If `a` is provided in high precision, these
+            parameters will be passed to the `quantize_to_fp4` call done prior to the
+            matrix multiplication.
+        other_quantize_kwargs (dict): If `other` is provided in high precision, these
+            parameters will be passed to the `quantize_to_fp4` call done prior to the
+            matrix multiplication.
         out_dtype (DataType): The data type of the output tensor, either
             `DataType.bfloat16` or `DataType.float16`.
-        out_shape (tuple[int, int] | None): The shape of the output tensor. This is
-            helpful when the input tensors have shapes that are not multiples of 64,
-            but which were padded to multiples of 64 during quantization.
 
     Returns:
         The output tensor.

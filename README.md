@@ -26,16 +26,16 @@ If you don't have a Blackwell GPU, you may use our reference implementation, whi
 ### Quantize a Model to NVFP4
 
 ```python
-from fouroversix import AdaptiveBlockScalingRule, apply_ptq
+from fouroversix import AdaptiveBlockScalingRule, quantize_model
 from transformers import AutoModelForCausalLM
 
 # NVFP4 using 4/6 with MSE block selection
 model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.2-1B")
-apply_ptq(model)
+quantize_model(model)
 
 # Standard NVFP4 round-to-nearest quantization
 model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.2-1B")
-apply_ptq(
+quantize_model(
     model,
     a_scale_rule=AdaptiveBlockScalingRule.always_6,
     w_scale_rule=AdaptiveBlockScalingRule.always_6,
@@ -51,13 +51,10 @@ import torch
 from fouroversix import AdaptiveBlockScalingRule, quantize_to_fp4
 
 x = torch.randn(1024, 1024, dtype=torch.bfloat16, device="cuda")
-x_e2m1, x_e4m3, x_normconst = quantize_to_fp4(x)
+x_quantized = quantize_to_fp4(x)
 
 # Standard NVFP4 round-to-nearest quantization
-x_e2m1, x_e4m3, x_normconst = quantize_to_fp4(
-    x,
-    scale_rule=AdaptiveBlockScalingRule.always_6,
-)
+x_quantized = quantize_to_fp4(x, scale_rule=AdaptiveBlockScalingRule.always_6)
 ```
 
 ### Multiply Two NVFP4 Tensors
@@ -65,18 +62,9 @@ x_e2m1, x_e4m3, x_normconst = quantize_to_fp4(
 ```python
 from fouroversix import fp4_matmul
 
-# Starting from two BF16 tensors with shape (M, K) and (N, K):
+# a and b can be either high-precision BF16 tensors, in which case they will be
+# quantized, or low-precision FP4Tensors if you've already quantized them yourself
 out = fp4_matmul(a, b)
-
-# If you've already quantized two tensors A and B as shown above:
-out = fp4_matmul(
-    a_e2m1=a_e2m1,
-    a_sf=a_e4m3,
-    a_normconst=a_normconst,
-    b_e2m1=b_e2m1,
-    b_sf=b_e4m3,
-    b_normconst=b_normconst,
-)
 ```
 
 ## PTQ Evaluation with LM Evaluation Harness
@@ -119,7 +107,7 @@ Here are our highest-priority items at the moment:
 - [ ] Add support for other options (MXFP4, stochastic rounding, RHT, 2D block scaling, transposed inputs) in the CUDA implementation
 - [x] Release PTQ implementations for AWQ, GPTQ, and SmoothQuant
 - [ ] Unit tests
-- [ ] Training implementation + full NVFP4 linear layer with 4/6
+- [x] Training implementation + full NVFP4 linear layer with 4/6
 
 ## Contributing
 

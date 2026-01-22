@@ -20,7 +20,7 @@ class MatmulBackend(str, Enum):
 
     - `cutlass`: CUTLASS implementation. This requires a Blackwell GPU.
     - `pytorch`: PyTorch implementation which first dequantizes the input tensors to
-        bf16 and then performs a bf16 matrix multiplication.
+        BF16 and then performs a BF16 matrix multiplication.
     """
 
     cutlass = "cutlass"
@@ -65,7 +65,8 @@ class MatmulBackend(str, Enum):
 
         if input.original_shape[1] != other.original_shape[1]:
             msg = (
-                "Both inputs must be in row-major layout and have the same inner "
+                "The first input must be in row-major layout, the second input must be"
+                "in column-major layout, and both inputs must have the same inner "
                 "dimension"
             )
             raise ValueError(msg)

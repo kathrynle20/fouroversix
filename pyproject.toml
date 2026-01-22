@@ -71,6 +71,8 @@ ignore = [
     "PLC0415",  # Allow imports that aren't at the top of the file
     "PLR0913",  # Allow functions with more than 5 arguments
     "RET506",  # Allow elif after raise
+    "S603",  # Allow untrusted inputs to be passed to subprocesses
+    "S607",  # Allow commands to be run by subprocess without providing a full path
     "TD003",  # Don't require issue links on TODO comments
 ]
 select = [

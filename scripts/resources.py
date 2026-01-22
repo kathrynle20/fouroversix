@@ -51,8 +51,8 @@ class Submodule(str, Enum):
     def has_untracked_or_unstaged_changes(self) -> bool:
         """Check if the submodule has untracked or unstaged changes."""
 
-        git_status = subprocess.run(  # noqa: S603
-            [  # noqa: S607
+        git_status = subprocess.run(
+            [
                 "git",
                 "-C",
                 self.get_local_path(),
@@ -80,7 +80,6 @@ class Submodule(str, Enum):
     def get_local_path(self) -> str:
         """Get the path of the submodule relative to the root directory."""
         return f"third_party/{self.value.replace('_', '-')}"
-        #return (Path(__file__).parent / "third_party" / self.value.replace("_", "-")).as_posix()
 
     def get_remote_url(self) -> str:
         """Get the remote URL of the submodule."""
@@ -143,7 +142,7 @@ def build_fouroversix_ext() -> None:
         FOUROVERSIX_INSTALL_PATH / "build",
     )
     subprocess.run(
-        ["python", "setup.py", "build_ext", "--inplace"],  # noqa: S607
+        ["python", "setup.py", "build_ext", "--inplace"],
         check=False,
     )
     shutil.copytree(
@@ -155,14 +154,14 @@ def build_fouroversix_ext() -> None:
 
 def install_flash_attn() -> None:
     subprocess.run(
-        ["pip", "install", "flash-attn", "--no-build-isolation"],  # noqa: S607
+        ["pip", "install", "flash-attn", "--no-build-isolation"],
         check=False,
     )
 
 
 def install_fouroversix() -> None:
-    subprocess.run(  # noqa: S603
-        [  # noqa: S607
+    subprocess.run(
+        [
             "pip",
             "install",
             "--no-deps",
@@ -175,8 +174,8 @@ def install_fouroversix() -> None:
 
 
 def install_fouroversix_non_editable() -> None:
-    subprocess.run(  # noqa: S603
-        [  # noqa: S607
+    subprocess.run(
+        [
             "pip",
             "install",
             "--no-deps",
@@ -188,8 +187,8 @@ def install_fouroversix_non_editable() -> None:
 
 
 def install_qutlass() -> None:
-    subprocess.run(  # noqa: S603
-        [  # noqa: S607
+    subprocess.run(
+        [
             "pip",
             "install",
             "--no-build-isolation",
@@ -268,7 +267,8 @@ def get_image(  # noqa: C901, PLR0912
                     "wheel",
                 )
                 .run_commands(
-                    f"git clone https://github.com/fla-org/flame.git {FOUROVERSIX_INSTALL_PATH}/third_party/flame",
+                    "git clone https://github.com/fla-org/flame.git "
+                    f"{FOUROVERSIX_INSTALL_PATH}/third_party/flame",
                     f"pip install -e {FOUROVERSIX_INSTALL_PATH}/third_party/flame",
                 )
             )
