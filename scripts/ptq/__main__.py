@@ -72,7 +72,7 @@ def run_ptq(
 @click.option("--model-name", "-m", type=str, multiple=True, required=True)
 @click.option("--ptq-method", "-p", type=PTQMethod, multiple=True, required=True)
 @click.option("--quantize-backend", type=QuantizeBackend, default=None)
-@click.option("--tasks", "-t", type=str, multiple=True, default=["wikitext"])
+@click.option("--task", "-t", type=str, multiple=True, default=["wikitext"])
 @click.option("--trust-remote-code", is_flag=True)
 @click.option(
     "--w-scale-rule",
@@ -85,6 +85,7 @@ def cli(**kwargs: dict[str, Any]) -> None:  # noqa: C901, PLR0912
     model_names = kwargs.pop("model_name")
     ptq_methods = kwargs.pop("ptq_method")
     use_modal = kwargs.pop("modal", False)
+    kwargs["tasks"] = kwargs.pop("task")
 
     # Expand shortcuts
     if model_names[0] == "llamaqwen":
